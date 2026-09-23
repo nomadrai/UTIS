@@ -26,6 +26,57 @@
 
 ---
 
+## 2026-09-24 (session 8) — Task #5: persistent hotspot detection + /api/hotspots
+
+### Done
+- `backend/etl/analysis/hotspots.py` (new): persistence rule — a ward is a
+  hotspot if its within-year LST percentile rank is ≥ pct (default 90) in
+  ≥ min_year_frac (default 0.7) of study years with data. Reads ONLY the
+  cached per-year ward summaries (no GEE calls); stable null-ward join
+  (i-th null ward ↔ i-th null stat, both ordered lists).
+- `/api/hotspots` implemented (was stubbed): pct 50..99 + min_year_frac
+  (0,1] validation (400s), 404 when the season's cache is missing,
+  GeoJSON FeatureCollection with per-ward stats (years_hot, persistence,
+  mean_percentile, mean_lst_k, yearly detail); `with_geometry=true`
+  embeds ward polygons for standalone use, default geometry=null (client
+  joins ward_no to /api/wards).
+- Frontend: hotspot toggle + red numbered pins at persistent-ward
+  centroids (joined client-side to ward polygons), tooltips with
+  persistence detail, status-line summary; fetchHotspots in api.js.
+- Detection results (pre-monsoon, pct=90/frac=0.7): **7 persistent
+  hotspot wards** — ward 15 top-1% hottest in ALL 7 years (320.7 K mean),
+  then 30, 14, 31, 17, 6, 13. Sensitivity sweep monotonic: 16 hotspots
+  at pct=80 → 0 at pct=99/frac=0.99. Cache now holds 7 years (2019–2025;
+  2019+2025 were computed on-demand by earlier frontend fetches) — more
+  years, stronger persistence signal.
+- `scripts/smoke_api.py` extended: detection meta, presence, ranking,
+  param guard, with_geometry, hotspot pins in the headless DOM →
+  ALL 22 CHECKS PASSED (status check fixed to accept the terminal
+  hotspot-summary line, which now fires after "Ready").
+
+### Key decisions & why
+- **Ward-level persistence, not pixel-level**: zones are the project's
+  analysis unit (and what the UI shows); pixel blobs would need a second
+  polygonization layer. The ward rule is fully explainable ("top-10% in ≥4
+  of 7 years") and reuses existing caches — zero GEE cost.
+- **LST-only methodology** (SUPPORTED_LAYERS = ("lst",)): the contract
+  defines hotspots via temperature percentile; an NDVI/NDBI analogue
+  would be a different product (can be added later if wanted).
+- **Client-side pin join**: /api/hotspots stays tiny (no geometry by
+  default); the map already owns ward geometry.
+
+### Working / Broken
+- ✅ Working: persistent hotspot overlay end-to-end; all three satellite
+  layers; 22-check smoke suite green.
+- ❌ Broken / blocked: /api/scenario still stubbed (task #6 — the last
+  unimplemented endpoint besides gee-status cosmetics).
+
+### Next steps (for next session)
+- [ ] Task #6: scenario fit dLST ~ dNDVI + dNDBI (explainable OLS per
+      ward-deltas across years) → /api/scenario + frontend sliders +
+      explanation panel (coefficients, r², n).
+- [ ] Optional: gee-status endpoint polish (fill gee_authenticated).
+
 ## 2026-09-24 (session 7) — Task #4: Sentinel-2 NDVI/NDBI composites + multi-layer app
 
 ### Done
@@ -402,8 +453,8 @@
 | 2 | LST computation, one time period | done | pre-monsoon 2020–2024 composites pulled; means 314–320 K, plausible |
 | 3 | Zonal LST stats via reduceRegion | done | 114 wards, mean+p95, 2020–2024 cached; hotspot pct ranks |
 | 4 | NDVI / NDBI + WorldCover | doing | NDVI+NDBI live 2026-09-24 (SCL mask, index medians, caches, UI); WorldCover pending |
-| 5 | Multi-year comparison + persistent hotspots | todo | Top-percentile-across-most-years |
+| 5 | Multi-year comparison + persistent hotspots | done | 7 persistent wards found (pct90/frac0.7, 7 years); /api/hotspots live |
 | 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | todo | Explainable coefficients; no black box |
-| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers+comparison+wards live 2026-09-24; hotspots/scenario/gee-status wait on #4–6 |
+| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers/comparison/wards/hotspots live; scenario waits on #6; gee-status pending |
 | 8 | Frontend wiring | doing | map+choropleth+year selector live 2026-09-24; scenario panel waits on #6 |
 | 9 | Docs: methodology write-up | todo | Compositing, masking, regression fit, caveats |

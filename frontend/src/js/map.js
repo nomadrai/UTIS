@@ -12,7 +12,7 @@
  *   - Year selector swaps BOTH the tile layer and the choropleth values.
  */
 
-import { fetchLayers, fetchComparison, fetchWards, LAYER_SPECS, yearsForLayer } from "./api.js";
+import { fetchLayers, fetchComparison, fetchWards, fetchHotspots, LAYER_SPECS, yearsForLayer } from "./api.js";
 import { initUI } from "./ui.js";
 
 const DEFAULT_SEASON = "pre-monsoon";
@@ -30,6 +30,7 @@ const state = {
   season: DEFAULT_SEASON,
   showTiles: true,
   showChoropleth: true,
+  showHotspots: true,
 };
 
 // per-layer year -> Map(joinKey -> {mean, p95, hotspot_pct})
@@ -38,6 +39,8 @@ const statsByLayerYear = new Map();
 let map = null;
 let tileLayer = null;
 let wardLayer = null;
+let hotspotLayer = null; // L.layerGroup of persistent-hotspot markers
+let hotspotsData = null; // FeatureCollection from /api/hotspots
 
 function status(message, kind = "info") {
   window.dispatchEvent(new CustomEvent("uhi:status", { detail: { message, kind } }));
@@ -181,6 +184,58 @@ function updateLegend() {
 let legendControl = null;
 
 // ---------------------------------------------------------------------------
+// Persistent hotspot overlay (task #5)
+// ---------------------------------------------------------------------------
+async function loadHotspots() {
+  hotspotsData = await fetchHotspots(90, 0.7, state.season);
+  renderHotspots();
+  const n = hotspotsData.features.length;
+  status(`Persistent hotspots: ${n} ward${n === 1 ? "" : "s"} (top-10% in ≥70% of years)`);
+}
+
+function renderHotspots() {
+  if (hotspotLayer) map.removeLayer(hotspotLayer);
+  hotspotLayer = L.layerGroup();
+  if (!hotspotsData) return;
+  for (const f of hotspotsData.features) {
+    const wn = f.properties.ward_no;
+    // Join to the ward polygons already on the map; null wards have no
+    // labeled polygon to pin — skip them (they stay in the choropleth).
+    const target = wardLayer && wn != null
+      ? wardLayer.getLayers().find((l) => l.feature?.properties?.ward_no === wn)
+      : null;
+    const ll = target ? target.getBounds().getCenter() : null;
+    if (!ll) continue;
+    const p = f.properties;
+    hotspotLayer.addLayer(
+      L.marker(ll, {
+        icon: L.divIcon({
+          className: "uhi-hotspot-pin",
+          html: `<span>${wn}</span>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        }),
+        title: `Ward ${wn} — persistent hotspot`,
+      }).bindTooltip(
+        `<b>Ward ${wn} — persistent hotspot</b><br>` +
+        `Hot (top-10% LST) in ${p.years_hot.length}/${p.n_years} years<br>` +
+        `Mean percentile: ${p.mean_percentile}<br>` +
+        `Mean LST: ${fmt(p.mean_lst_k)} K (${fmt(k2c(p.mean_lst_k))} °C)`,
+        { sticky: true }
+      )
+    );
+  }
+  if (state.showHotspots) hotspotLayer.addTo(map);
+}
+
+export function setHotspotsVisible(v) {
+  state.showHotspots = Boolean(v);
+  if (!map) return;
+  if (state.showHotspots) hotspotLayer?.addTo(map);
+  else if (hotspotLayer) map.removeLayer(hotspotLayer);
+}
+
+// ---------------------------------------------------------------------------
 // Public API (used by ui.js)
 // ---------------------------------------------------------------------------
 export async function setLayer(layer) {
@@ -266,7 +321,8 @@ export async function initMap() {
   state.visRange = [meta.vis_params.min, meta.vis_params.max];
 
   // Tiles + ward geometry + per-ward stats, in parallel; one failure must
-  // not kill the others.
+  // not kill the others. Hotspots (LST-only methodology) load after wards
+  // so pins can join to ward polygons.
   await Promise.allSettled([
     loadTileLayer(),
     loadWardLayer(),
@@ -274,6 +330,7 @@ export async function initMap() {
   ]);
   restyleWards();
   updateLegend();
+  loadHotspots().catch(() => status("Hotspot overlay unavailable", "error"));
 
   initUI({
     getState,
@@ -281,6 +338,7 @@ export async function initMap() {
     setLayer,
     setTilesVisible,
     setChoroplethVisible,
+    setHotspotsVisible,
   });
 
   status("Ready");

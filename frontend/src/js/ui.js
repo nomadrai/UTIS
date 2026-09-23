@@ -15,10 +15,10 @@
 import { fetchComparison, LAYER_SPECS, yearsForLayer } from "./api.js";
 
 /**
- * @param {object} mapApi { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible }
+ * @param {object} mapApi { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible, setHotspotsVisible }
  */
 export function initUI(mapApi) {
-  const { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible } = mapApi;
+  const { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible, setHotspotsVisible } = mapApi;
   const { layer, years, year: currentYear } = getState();
 
   // --- status line -----------------------------------------------------------
@@ -54,8 +54,10 @@ export function initUI(mapApi) {
   // --- layer toggles -----------------------------------------------------------
   const tilesChk = document.getElementById("toggle-tiles");
   const choroplethChk = document.getElementById("toggle-choropleth");
+  const hotspotsChk = document.getElementById("toggle-hotspots");
   tilesChk.addEventListener("change", () => setTilesVisible(tilesChk.checked));
   choroplethChk.addEventListener("change", () => setChoroplethVisible(choroplethChk.checked));
+  hotspotsChk.addEventListener("change", () => setHotspotsVisible(hotspotsChk.checked));
 
   // --- city summary for the selected layer+year ----------------------------------
   const summaryEl = document.getElementById("city-summary");

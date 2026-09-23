@@ -104,6 +104,26 @@ def main() -> None:
     wards_fc = get_json("/api/wards")
     check("wards", len(wards_fc.get("features", [])) == 114)
 
+    # --- hotspots (task #5) -------------------------------------------------------
+    hs = get_json("/api/hotspots")  # defaults: pct=90, frac=0.7
+    det = hs.get("detection", {})
+    feats = hs.get("features", [])
+    check("hotspots detection meta",
+          det.get("pct") == 90 and det.get("min_year_frac") == 0.7
+          and len(det.get("years_used", [])) >= 5,
+          f"{len(det.get('years_used', []))} years, {len(feats)} hotspots")
+    check("hotspots present", 1 <= len(feats) <= 30)
+    top = feats[0]["properties"] if feats else {}
+    check("hotspots ranked top persistence", top.get("persistence", 0) >= 0.7)
+    try:
+        get_json("/api/hotspots?pct=45")
+        check("hotspots pct guard", False, "expected 400")
+    except urllib.error.HTTPError as e:
+        check("hotspots pct guard", e.code == 400)
+    hs_geo = get_json("/api/hotspots?with_geometry=true")
+    g0 = hs_geo["features"][0]["geometry"] if hs_geo["features"] else None
+    check("hotspots with_geometry", g0 is not None and g0.get("type") in ("Polygon", "MultiPolygon"))
+
     # --- headless Chrome render ------------------------------------------------------
     subprocess.run(
         ["rm", "-rf", "/tmp/uhi_smoke_profile"], check=False
@@ -119,12 +139,19 @@ def main() -> None:
     )
     dom_html = dom.stdout
     check("chrome DOM has app", "UHI Nagpur" in dom_html)
-    check("chrome status Ready", 'data-kind="info">Ready<' in dom_html)
+    # Terminal status is either "Ready" or the hotspot summary (whichever
+    # async branch finished last) — anything else (Starting…/error) is a fail.
+    status_ok = (
+        'data-kind="info">Ready<' in dom_html
+        or 'data-kind="info">Persistent hotspots:' in dom_html
+    )
+    check("chrome status reached terminal state", status_ok)
     # 3 layer options + 7 year options (2019-2025 for lst)
     check("chrome selector options", dom_html.count("<option value=") >= 10)
     check("chrome ward paths", dom_html.count("<path") >= 100,
           f"{dom_html.count('<path')} paths")
     check("chrome gee tiles requested", dom_html.count("earthengine") > 0)
+    check("chrome hotspot pins", dom_html.count("uhi-hotspot-pin") >= 1)
     check("chrome no js errors",
           "Uncaught" not in dom.stderr and "TypeError" not in dom.stderr)
 

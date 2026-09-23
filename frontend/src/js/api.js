@@ -50,6 +50,17 @@ export async function fetchWards() {
   return getJSON("/api/wards");
 }
 
+/**
+ * GET /api/hotspots?pct=..&min_year_frac=..
+ * -> FeatureCollection of persistent hotspot wards (LST), geometry null —
+ *    joined client-side to the already-loaded ward polygons by ward_no.
+ */
+export async function fetchHotspots(pct = 90, minYearFrac = 0.7, season = "pre-monsoon") {
+  return getJSON(
+    `/api/hotspots?pct=${pct}&min_year_frac=${minYearFrac}&season=${encodeURIComponent(season)}`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Layer registry (client mirror of backend/app/api/layers.py LAYERS — the
 // backend remains authoritative; this drives UI labels + year ranges).

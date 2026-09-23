@@ -54,6 +54,13 @@
       color: #556; gap: 4px; padding: 24px; box-sizing: border-box;
     }
     .uhi-error code { background: #eef; padding: 2px 6px; border-radius: 4px; }
+
+    .uhi-hotspot-pin {
+      background: rgba(215, 25, 28, 0.92); color: #fff;
+      border: 2px solid #fff; border-radius: 50%;
+      font-size: 11px; font-weight: 700; line-height: 22px;
+      text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
   </style>
 </head>
 <body>
@@ -76,6 +83,7 @@
         <select id="layer-select" aria-label="Analysis layer"></select>
         <label style="margin-top:8px"><input type="checkbox" id="toggle-tiles" checked /> Satellite layer (Google Earth Engine)</label>
         <label><input type="checkbox" id="toggle-choropleth" checked /> Ward choropleth (percentile)</label>
+        <label><input type="checkbox" id="toggle-hotspots" checked /> Persistent hotspot pins (LST)</label>
       </div>
 
       <div class="ctrl">
