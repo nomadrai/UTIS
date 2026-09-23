@@ -11,6 +11,7 @@ Run:  .venv/bin/python scripts/smoke_api.py
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
 import sys
 import threading
@@ -21,8 +22,26 @@ import uvicorn
 
 from backend.app.main import app
 
-BASE = "http://127.0.0.1:8000"
 FAILURES: list[str] = []
+
+
+def _free_port() -> int:
+    """Ephemeral port for the in-process server.
+
+    Hardcoding 8000 was a trap: a stale uvicorn from a previous session
+    holding 8000 made every check silently pass against OLD code (the
+    in-process server failed to bind while health-waits succeeded against
+    the stale listener). Ephemeral port removes the collision class.
+    """
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+PORT = _free_port()
+BASE = f"http://127.0.0.1:{PORT}"
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -46,7 +65,7 @@ def fetch_tile(tile_url: str) -> int:
 
 def main() -> None:
     server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="warning")
+        uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
     )
     threading.Thread(target=server.run, daemon=True).start()
     for _ in range(60):
@@ -139,6 +158,10 @@ def main() -> None:
     ex = sc.get("explanation", {})
     check("scenario ward 15 estimate", isinstance(sc.get("est_lst_change_c"), (int, float)),
           f"{sc.get('est_lst_change_c')} °C, baseline {sc.get('baseline')}")
+    check("scenario response shape (baseline+deltas survive response_model)",
+          isinstance(sc.get("baseline"), dict) and "ndvi" in sc["baseline"]
+          and isinstance(sc.get("deltas"), dict) and "d_ndvi" in sc["deltas"],
+          f"baseline={sc.get('baseline')}, deltas={sc.get('deltas')}")
     check("scenario explanation complete",
           all(k in ex for k in ("equation", "coef", "p", "r2", "n", "signs_as_expected")),
           f"n={ex.get('n')}, r2={round(ex.get('r2', 0), 2)}, signs_ok={ex.get('signs_as_expected')}")

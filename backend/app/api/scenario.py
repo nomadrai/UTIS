@@ -27,6 +27,17 @@ class ScenarioRequest(BaseModel):
 class ScenarioResponse(BaseModel):
     zone_id: str
     est_lst_change_c: float
+    baseline: dict = Field(
+        ...,
+        description="Zone's baseline mean indices: {ndvi, ndbi} — the slider "
+        "%s are applied to these. NOTE: must be declared here or FastAPI's "
+        "response_model filtering silently strips it from the HTTP response "
+        "(found the hard way 2026-09-24).",
+    )
+    deltas: dict = Field(
+        ...,
+        description="Absolute index deltas applied: {d_ndvi, d_ndbi}.",
+    )
     explanation: dict = Field(
         ...,
         description="Fitted model terms (coefficients, se/t/p, r2, n, equation, "

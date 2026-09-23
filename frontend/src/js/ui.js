@@ -143,7 +143,21 @@ export function initUI(mapApi) {
     resultEl.innerHTML = `<span class="placeholder">Estimating…</span>`;
     try {
       const r = await postScenario(zone, veg, built);
-      const ex = r.explanation;
+      const ex = r.explanation ?? {};
+      // Guard the response shape: a schema drift (field stripped server-side,
+      // older backend, proxy mangling) should surface as a message, not a
+      // TypeError that blanks the panel.
+      const missing = [];
+      if (!r.baseline) missing.push("baseline");
+      if (!r.deltas) missing.push("deltas");
+      if (typeof r.est_lst_change_c !== "number") missing.push("est_lst_change_c");
+      if (!ex.equation) missing.push("explanation.equation");
+      if (missing.length) {
+        resultEl.innerHTML =
+          `<div class="uhi-warn">Scenario response is incomplete (missing: ${missing.join(", ")}).` +
+          ` Is the backend running the latest code? Restart uvicorn and retry.</div>`;
+        return;
+      }
       const warn = (ex.warnings || []).map((w) => `<div class="uhi-warn">⚠ ${w}</div>`).join("");
       const pNdvi = ex.p?.ndvi;
       const pNdbi = ex.p?.ndbi;
@@ -151,7 +165,7 @@ export function initUI(mapApi) {
         `<div class="uhi-scenario-big">${r.est_lst_change_c > 0 ? "+" : ""}${r.est_lst_change_c.toFixed(2)} °C</div>` +
         `<div class="placeholder">surface temperature, ${r.zone_id}</div>` +
         `<div class="uhi-equation"><code>${ex.equation}</code></div>` +
-        `<div class="placeholder">fit: n=${ex.n} ward-year pairs, r²=${ex.r2.toFixed(2)}` +
+        `<div class="placeholder">fit: n=${ex.n ?? "—"} ward-year pairs, r²=${typeof ex.r2 === "number" ? ex.r2.toFixed(2) : "—"}` +
         (ex.signs_as_expected ? " — signs as expected (vegetation cools, built-up warms)" : " — ⚠ unexpected signs, interpret with care") +
         `</div>` +
         `<div class="placeholder">term significance: dNDBI p=${pNdbi?.toFixed(3) ?? "—"}, dNDVI p=${pNdvi?.toFixed(3) ?? "—"}` +

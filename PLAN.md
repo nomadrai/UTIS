@@ -26,6 +26,41 @@
 
 ---
 
+## 2026-09-24 (session 12) — BUGFIX: scenario panel "cannot read 'ndvi'" (response_model filtering + stale-server trap)
+
+### Done
+- User hit `Cannot read properties of undefined (reading 'ndvi')` in the
+  scenario panel. Root cause was TWO stacked issues:
+  1. **FastAPI response_model filtering**: ScenarioResponse declared only
+     zone_id/est_lst_change_c/explanation, so `baseline` and `deltas` were
+     silently STRIPPED from HTTP responses — direct-call tests saw them
+     (no filtering) and the smoke test only asserted surviving fields.
+     Fixed: baseline/deltas declared on the model; smoke test gained a
+     response-shape check so any future field drift fails loudly.
+  2. **Stale-server trap**: the user's browser AND the first re-run of the
+     smoke test were talking to a uvicorn from an earlier session still
+     holding port 8000 (pid 241687) — the fixed code was never served.
+     Killed it; smoke test now binds an EPHEMERAL port (_free_port()) so
+     a stale listener can never silently serve old code again. During
+     editing, `explanation` was briefly lost from the response model —
+     caught by the new explanation-complete check, restored.
+- UI hardened: runEstimate validates the response shape and renders a
+  clear "incomplete response — restart the backend" message instead of a
+  TypeError blanking the panel.
+- Full suite: 35 checks ALL PASSED (shape check included).
+
+### Key decisions & why
+- **Ephemeral-port smoke test** is the systemic lesson: hardcoded ports
+  turn "stale process" into "tests silently pass against old code" —
+  the worst failure mode. Same class of bug bit twice today (ss + bind
+  error in session 7's stale server; invisible pass-through here).
+- The UI now distrusts its own API responses (shape guard) — schema drift
+  should surface as a readable message at the point of use.
+
+### Next steps (for next session)
+- [ ] User: restart uvicorn to serve the fixed code (kill any old process).
+- [ ] Commit everything (scenario fix included).
+
 ## 2026-09-24 (session 11) — Task #9: methodology write-up (docs/METHODOLOGY.md) — BOARD 9/9
 
 ### Done
