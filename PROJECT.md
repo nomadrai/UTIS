@@ -84,6 +84,14 @@ Nagpur is a useful and under-studied UHI case study:
   the map.
 - **Interactive map interface** — Leaflet-based web frontend showing LST /
   index layers, year switcher, hotspot overlays, and scenario sliders.
+- **Phase 2 (planned — see PLAN.md task board #10–#18):** what-if map
+  (choropleth recolored by predicted per-ward ΔLST under slider scenarios),
+  an **AI chat assistant** that answers ward- and city-level temperature
+  questions using the platform's own computed data (tool-calling LLM via
+  Groq / Google AI Studio / OpenRouter with automatic fallback — it cites
+  platform numbers, never invents them), trend charts, population-weighted
+  heat-exposure ranking, ΔLST map layers, ERA5-Land air-temperature
+  cross-check, and report export.
 
 ### WILL NOT do
 
@@ -128,6 +136,9 @@ React/Vue build tooling (a static Leaflet app keeps the project navigable).
 | Sentinel-2 MSI | `COPERNICUS/S2_SR_HARMONIZED` | 10 m NDVI/NDBI at higher spatial detail; **no thermal band**, so LST comes from Landsat only, S2 supplements land-cover mapping. |
 | ESA WorldCover 10 m | `ESA/WorldCover/v200` (2021) | Land-cover reference/validation for built-up vs vegetation classes. |
 | Bhuvan LULC (ISRO) | manual download (not in GEE) | Optional India-specific land-cover cross-check. |
+| Population (Phase 2) | WorldPop or GHSL (GEE catalog) | Per-ward population for exposure-weighted hotspot ranking (#13); model estimates — source + year cited. |
+| Air temperature (Phase 2) | ERA5-Land (GEE catalog) | 2 m air-temperature cross-check for the LST ≠ air-temp caveat (#15). |
+| LLM providers (Phase 2) | Groq · Google AI Studio · OpenRouter (APIs) | Chat assistant inference (#11), OpenAI-compatible fallback chain; free tiers; keys in backend/.env (see .env.example). |
 | AOI boundary | OSM relation 10330977 (Nagpur Urban Taluka) | City-extent polygon stored at `backend/config/aoi/nagpur_city.geojson` (384-vertex MultiPolygon, ODbL licensed). OSM gave cleaner city geometry than GADM admin levels; static reference — re-fetch only with a dated PLAN.md entry. |
 
 **Primary constraints we design around:**

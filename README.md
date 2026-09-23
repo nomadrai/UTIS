@@ -5,6 +5,16 @@ imagery (Google Earth Engine) to study **Urban Heat Island (UHI)** patterns in
 Nagpur, and estimates how land-cover changes (vegetation, built-up area) could
 shift surface temperature distribution.
 
+**Live features:** 4 satellite layers (LST / NDVI / NDBI / land cover), 114-ward
+choropleth, multi-year comparison, persistent hotspot detection, scenario
+what-if sliders with a fully explainable fitted model.
+
+**Phase 2 (planned):** what-if map (city recolored by predicted per-ward ΔLST),
+AI chat assistant about the city's temperature change (Groq / Google AI /
+OpenRouter fallback — grounded in this platform's own data, never inventing
+numbers), trend charts, population-weighted exposure ranking, ΔLST layers,
+report export. See the task board in [PLAN.md](PLAN.md).
+
 - **What this project is / is not:** [PROJECT.md](PROJECT.md)
 - **How the analysis works — methodology, fitted model, caveats:** [docs/METHODOLOGY.md](docs/METHODOLOGY.md)
 - **Session log & task board:** [PLAN.md](PLAN.md)
@@ -47,6 +57,8 @@ pip install -r requirements.txt
 # 3. Configure your GEE project ID
 cp backend/.env.example backend/.env
 #    then edit backend/.env and set GEE_PROJECT_ID=<your project id>
+#    (optional, Phase 2 AI chat: also set GROQ_API_KEY / GOOGLE_AI_API_KEY /
+#    OPENROUTER_API_KEY there — any one enables the chat assistant)
 
 # 4. Sanity-check that GEE works (pulls a tiny image collection count)
 python -m backend.etl.gee_pulls.pull_landsat_lst --sanity-check

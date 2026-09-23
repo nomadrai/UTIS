@@ -625,3 +625,41 @@
 | 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | done | all five + /api/wards live 2026-09-24; 29-check smoke suite |
 | 8 | Frontend wiring | done | map, choropleth, hotspot pins, layer/year selectors, scenario panel live |
 | 9 | Docs: methodology write-up | done | docs/METHODOLOGY.md: 10 sections + caveats + repro commands; README/PROJECT cross-linked |
+
+### Phase 2 — extra features (planned 2026-09-24, design sketch below)
+
+| # | Task | Status | Notes |
+|---|---|---|---|
+| 10 | What-if map: choropleth recolored by predicted per-ward dLST | todo | Reuses scenario baselines + fitted coefficients client-side; slider drives a live "greening/built-up scenario" heatmap |
+| 11 | AI chat about city temperature (ward + city-wide) | todo | OpenAI-compatible tool-calling bot; providers Groq → Google AI → OpenRouter fallback; tools = existing endpoints; system prompt = METHODOLOGY digest; bot must CALL /api/scenario, never compute numbers itself |
+| 12 | Trend charts (Chart.js) | todo | Ward/city LST line over years, NDVI+NDBI side panel; data from /api/comparison caches |
+| 13 | Exposure weighting (population) | todo | WorldPop/GHSL via GEE; per-ward population → hotspot ranking by people exposed; new cache + endpoint |
+| 14 | Delta layers dLST(2019→2025) | todo | Server-side GEE subtraction composite → tile layer; "where is warming concentrated" |
+| 15 | ERA5-Land air-temp cross-check | todo | Partially addresses LST ≠ air-temp caveat; city + ward time series |
+| 16 | Report export (HTML/PDF) | todo | Map snapshot + charts + hotspot table + AI narrative; depends on #11 |
+| 17 | Zone metadata (10 zones from prabhag panel) | todo | Same extraction pipeline as wards; fills ward.zone = null |
+| 18 | Extra seasons cached (monsoon/winter/post-monsoon) | todo | Code supports all seasons; pull + cache; enables season-comparison chat/charts |
+
+### Phase-2 design notes (agreed 2026-09-24 — brainstorm summary)
+
+- **AI chat (#11) core rule:** the LLM interprets pre-computed summaries
+  (all caches + endpoints) and MUST call tools for any number it states —
+  especially `POST /api/scenario` for what-ifs. No LLM arithmetic. Every
+  claim traces to a tool call; the UI can render source chips under the
+  answer. Answers are synthesized narratives (lead with the answer, cite
+  wards, cap depth), never data dumps.
+- **Provider fallback:** Groq / Google AI Studio / OpenRouter all speak the
+  OpenAI-compatible protocol → one client, three base_url+key configs,
+  fail over on 429/quota/timeout. Keys in backend/.env (see .env.example);
+  free-tier model names are configurable. Privacy note: prompts go to
+  third parties — acceptable for public satellite data, documented.
+- **What-if map (#10) design:** predicted dLST_ward = intercept + b_ndvi·
+  (pct_veg/100·NDVI_base) + b_ndbi·(pct_built/100·NDBI_base) per ward,
+  computed client-side from /api/scenario's model metadata + cached
+  baselines; recolors the choropleth with a diverging palette + legend.
+  Backend stays the single source of truth: the endpoint publishes the
+  coefficients + baselines the client uses.
+- **Exposure weighting (#13):** population per ward from WorldPop/GHSL
+  (GEE catalog, same AOI/season discipline); hotspot ranking gains a
+  "people exposed" dimension; caveat: population rasters are model
+  estimates, cite source + year.

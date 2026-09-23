@@ -212,7 +212,28 @@ b_NDVI: p = 0.90     (NOT significant on this panel)
 8. **One-off environmental caveats** are logged in PLAN.md sessions rather
    than silently patched — e.g. the mirrored source PDF (§2).
 
-## 10. Reproducibility
+## 10. Phase-2 features and how they inherit these rules
+
+Planned extensions (task board #10–#18 in PLAN.md) are bound by the same
+methodology — this section is the contract they must honor:
+
+- **AI chat assistant (#11):** answers ONLY from the platform's computed
+  data — it calls the same endpoints this document describes (comparison,
+  hotspots, scenario, landcover-stats) as tools, and must route any
+  what-if arithmetic through `POST /api/scenario`. It may not compute
+  numbers itself, and its system prompt includes §9's caveats verbatim so
+  it inherits the honesty constraints (LST ≠ air temperature, NDVI-term
+  weakness, 2005 ward delimitation). Free-tier providers process prompts
+  externally — acceptable for public satellite data, noted for users.
+- **What-if map (#10):** client-side prediction must use the coefficients
+  and baselines published by the backend (single source of truth), with
+  the same extrapolation warnings as `/api/scenario`.
+- **Exposure weighting (#13):** population rasters are model estimates —
+  source + year must be cited wherever a people-exposed figure appears.
+- **ERA5-Land cross-check (#15):** outputs are labeled air temperature
+  (2 m), never mixed with LST numbers.
+
+## 11. Reproducibility
 
 Every published number regenerates from these commands (auth + `.env`
 required; see README):
