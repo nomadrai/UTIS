@@ -12,28 +12,32 @@
  *   - Year selector swaps BOTH the tile layer and the choropleth values.
  */
 
-import { fetchLayers, fetchComparison, fetchWards } from "./api.js";
+import { fetchLayers, fetchComparison, fetchWards, LAYER_SPECS, yearsForLayer } from "./api.js";
 import { initUI } from "./ui.js";
 
-export const STUDY_YEARS = [2020, 2021, 2022, 2023, 2024];
 const DEFAULT_SEASON = "pre-monsoon";
 
-// Same palette as the GEE tile vis params — tiles and choropleth read as one layer.
-const RAMP = ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"];
+// Per-layer ramps (tile vis params and choropleth share them per layer).
+const RAMPS = {
+  lst: ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"],
+  ndvi: ["#d73027", "#fdae61", "#ffffbf", "#a6d96a", "#1a9850"],
+  ndbi: ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"],
+};
 
 const state = {
-  year: STUDY_YEARS[STUDY_YEARS.length - 1],
+  layer: "lst",
+  year: 2024, // re-clamped to the layer's range in initMap
   season: DEFAULT_SEASON,
   showTiles: true,
   showChoropleth: true,
 };
 
+// per-layer year -> Map(joinKey -> {mean, p95, hotspot_pct})
+const statsByLayerYear = new Map();
+
 let map = null;
 let tileLayer = null;
 let wardLayer = null;
-
-// year -> Map(joinKey -> {mean, p95, hotspot_pct}); joinKey "n0","n1".. for null wards
-const statsByYear = new Map();
 
 function status(message, kind = "info") {
   window.dispatchEvent(new CustomEvent("uhi:status", { detail: { message, kind } }));
@@ -42,12 +46,6 @@ function status(message, kind = "info") {
 // ---------------------------------------------------------------------------
 // Color + formatting helpers
 // ---------------------------------------------------------------------------
-function pctColor(pct) {
-  if (pct == null) return "#888";
-  const i = Math.min(RAMP.length - 1, Math.floor((pct / 100) * RAMP.length));
-  return RAMP[i];
-}
-
 const k2c = (k) => (k == null ? null : k - 273.15);
 const fmt = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
 
@@ -59,12 +57,12 @@ function joinKeyOf(feature) {
   return wn == null ? feature.__joinKey : `w${wn}`; // __joinKey = i-th null feature
 }
 
-function statsMapFor(year) {
-  return statsByYear.get(String(year)) ?? new Map();
+function statsMapFor(layer, year) {
+  return statsByLayerYear.get(`${layer}:${year}`) ?? new Map();
 }
 
-async function loadComparison() {
-  const payload = await fetchComparison(STUDY_YEARS, "lst", state.season);
+async function loadComparison(layer, years) {
+  const payload = await fetchComparison(years, layer, state.season);
   for (const [year, bundle] of Object.entries(payload.years)) {
     const m = new Map();
     let nullIdx = 0;
@@ -72,21 +70,21 @@ async function loadComparison() {
       const key = s.ward_no == null ? `n${nullIdx++}` : `w${s.ward_no}`;
       m.set(key, s);
     }
-    statsByYear.set(year, m);
+    statsByLayerYear.set(`${layer}:${year}`, m);
   }
-  status(`Loaded per-ward stats for ${Object.keys(payload.years).length} years`);
+  status(`Loaded ${layer} stats for ${Object.keys(payload.years).length} years`);
 }
 
 // ---------------------------------------------------------------------------
 // Layers
 // ---------------------------------------------------------------------------
 async function loadTileLayer() {
-  const meta = await fetchLayers(state.year, "lst", state.season);
+  const meta = await fetchLayers(state.year, state.layer, state.season);
   if (tileLayer) map.removeLayer(tileLayer);
   tileLayer = L.tileLayer(meta.tile_url, {
     opacity: 0.8,
     maxZoom: 19,
-    attribution: "Google Earth Engine — Landsat 8/9 ST_B10",
+    attribution: `Google Earth Engine — ${meta.source}`,
   });
   if (state.showTiles) tileLayer.addTo(map);
   state.visRange = [meta.vis_params.min, meta.vis_params.max];
@@ -95,7 +93,7 @@ async function loadTileLayer() {
 
 function wardStyle(feature) {
   const key = joinKeyOf(feature);
-  const s = key ? statsMapFor(state.year).get(key) : undefined;
+  const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
   return {
     color: "#4a5568",
     weight: 1,
@@ -107,15 +105,18 @@ function wardStyle(feature) {
 
 function wardTooltip(feature) {
   const key = joinKeyOf(feature);
-  const s = key ? statsMapFor(state.year).get(key) : undefined;
+  const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
   const wn = feature.properties?.ward_no;
   const name = wn == null ? "Unnumbered area" : `Ward ${wn}`;
   if (!s || s.mean == null) return `${name}<br>no data`;
+  const unit = LAYER_SPECS[state.layer]?.units ?? "";
+  const meanLine =
+    state.layer === "lst"
+      ? `LST: ${fmt(s.mean)} K (${fmt(k2c(s.mean))} °C)<br>95th pct: ${fmt(s.p95)} K`
+      : `${state.layer.toUpperCase()} mean: ${fmt(s.mean, 3)} ${unit}<br>95th pct: ${fmt(s.p95, 3)}`;
   return (
-    `<b>${name}</b><br>` +
-    `LST: ${fmt(s.mean)} K (${fmt(k2c(s.mean))} °C)<br>` +
-    `95th pct: ${fmt(s.p95)} K<br>` +
-    `Hotspot percentile: ${s.hotspot_pct == null ? "—" : s.hotspot_pct}`
+    `<b>${name}</b><br>` + meanLine +
+    `<br>${state.layer.toUpperCase()} percentile: ${s.hotspot_pct == null ? "—" : s.hotspot_pct}`
   );
 }
 
@@ -130,6 +131,13 @@ function restyleWards() {
     l.setStyle(wardStyle(f));
     l.bindTooltip(wardTooltip(f), { sticky: true });
   });
+}
+
+function pctColor(pct) {
+  if (pct == null) return "#888";
+  const ramp = RAMPS[state.layer] ?? RAMPS.lst;
+  const i = Math.min(ramp.length - 1, Math.floor((pct / 100) * ramp.length));
+  return ramp[i];
 }
 
 async function loadWardLayer() {
@@ -148,37 +156,58 @@ async function loadWardLayer() {
 // ---------------------------------------------------------------------------
 // Legend
 // ---------------------------------------------------------------------------
-function addLegend() {
+function updateLegend() {
+  if (!map) return;
+  const ramp = RAMPS[state.layer] ?? RAMPS.lst;
+  const spec = LAYER_SPECS[state.layer] ?? LAYER_SPECS.lst;
+  if (legendControl) legendControl.remove();
   const Legend = L.Control.extend({
     onAdd() {
       const div = L.DomUtil.create("div", "uhi-legend");
       div.innerHTML =
+        `<b>${spec.label} — ${state.year}</b>` +
         `<div class="uhi-legend-row">` +
-        `<span class="uhi-legend-swatch" style="background:${RAMP[0]}"></span>` +
-        `<span class="uhi-legend-swatch" style="background:${RAMP[1]}"></span>` +
-        `<span class="uhi-legend-swatch" style="background:${RAMP[2]}"></span>` +
-        `<span class="uhi-legend-swatch" style="background:${RAMP[3]}"></span>` +
-        `<span class="uhi-legend-swatch" style="background:${RAMP[4]}"></span>` +
+        ramp.map((c) => `<span class="uhi-legend-swatch" style="background:${c}"></span>`).join("") +
         `</div>` +
-        `<div class="uhi-legend-labels"><span>coolest wards</span><span>hottest wards</span></div>` +
-        `<div class="uhi-legend-note">Ward color = hotspot percentile within ${state.year}; ` +
-        `satellite tint = LST (fixed ${state.visRange?.[0] ?? 290}–${state.visRange?.[1] ?? 325} K scale)</div>`;
+        `<div class="uhi-legend-labels"><span>${spec.legend.low}</span><span>${spec.legend.high}</span></div>` +
+        `<div class="uhi-legend-note">Ward color = percentile within ${state.year}; ` +
+        `satellite tint = ${state.layer.toUpperCase()} (fixed ${state.visRange?.[0]}–${state.visRange?.[1]} ${spec.units})</div>`;
       return div;
     },
   });
-  new Legend({ position: "bottomright" }).addTo(map);
+  legendControl = new Legend({ position: "bottomright" }).addTo(map);
 }
+
+let legendControl = null;
 
 // ---------------------------------------------------------------------------
 // Public API (used by ui.js)
 // ---------------------------------------------------------------------------
+export async function setLayer(layer) {
+  if (!LAYER_SPECS[layer]) return;
+  if (layer === state.layer) return;
+  state.layer = layer;
+  const years = yearsForLayer(layer);
+  if (!years.includes(state.year)) state.year = years[years.length - 1];
+  status(`Switching to ${LAYER_SPECS[layer].label}…`);
+  await Promise.allSettled([loadTileLayer(), loadComparison(layer, years)]);
+  restyleWards();
+  updateLegend();
+  status(`${LAYER_SPECS[layer].label}, ${state.year} ${state.season} — updated`);
+}
+
 export async function setYear(year) {
-  if (!STUDY_YEARS.includes(Number(year))) return;
+  const years = yearsForLayer(state.layer);
+  if (!years.includes(Number(year))) return;
   state.year = Number(year);
   status(`Switching to ${state.year}…`);
+  if (!statsMapFor(state.layer, state.year).size) {
+    await loadComparison(state.layer, years); // first view of this year for this layer
+  }
   await loadTileLayer(); // tile URL is year-specific
   restyleWards();
-  status(`${state.year} ${state.season} — ward means + composite updated`);
+  updateLegend();
+  status(`${LAYER_SPECS[state.layer].label}, ${state.year} ${state.season} — updated`);
 }
 
 export function setTilesVisible(v) {
@@ -196,7 +225,7 @@ export function setChoroplethVisible(v) {
 }
 
 export function getState() {
-  return { ...state, years: [...STUDY_YEARS] };
+  return { ...state, years: yearsForLayer(state.layer) };
 }
 
 // ---------------------------------------------------------------------------
@@ -236,13 +265,20 @@ export async function initMap() {
 
   state.visRange = [meta.vis_params.min, meta.vis_params.max];
 
-  // Tiles + choropleth load in parallel; one failure should not kill the other.
-  await Promise.allSettled([loadTileLayer(), loadWardLayer()]);
-  addLegend();
+  // Tiles + ward geometry + per-ward stats, in parallel; one failure must
+  // not kill the others.
+  await Promise.allSettled([
+    loadTileLayer(),
+    loadWardLayer(),
+    loadComparison(state.layer, yearsForLayer(state.layer)),
+  ]);
+  restyleWards();
+  updateLegend();
 
   initUI({
     getState,
     setYear,
+    setLayer,
     setTilesVisible,
     setChoroplethVisible,
   });

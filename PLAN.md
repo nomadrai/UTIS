@@ -26,6 +26,57 @@
 
 ---
 
+## 2026-09-24 (session 7) — Task #4: Sentinel-2 NDVI/NDBI composites + multi-layer app
+
+### Done
+- `backend/etl/gee_pulls/pull_s2_indices.py` (new): S2_SR_HARMONIZED,
+  SCL masking (classes 3/8/9/10/11), per-scene reflectance scaling +
+  normalizedDifference indices (NDVI (B8-B4)/(B8+B4), NDBI (B11-B8)/
+  (B11+B8)) BEFORE median compositing (index median, not band median),
+  fixed vis params, sanity check, CLI (--sanity-check/--zonal-stats/
+  --refresh). Sanity vs live GEE: 55 S2 scenes pre-monsoon 2024;
+  city means NDVI 0.27 / NDBI 0.05 — plausible for dry-season Nagpur.
+- `gee_common.season_dates()` shared helper: single source of season
+  windows for both pulls (winter wrap handled once).
+- `lst_stats.py` generalized to layers: per-layer cache files
+  (`lst_ward_stats_{layer}_{season}.json`), injectable composite builder,
+  per-layer units/source metadata; LST cache migrated to new name.
+- `/api/layers` + `/api/comparison` refactored to a LAYERS registry
+  (composite/vis/min_year/source per layer); S2 layers reject pre-2017
+  (no coverage); landcover explicitly not available yet.
+- Per-ward NDVI/NDBI stats cached for 2020–2024 (10 layer-years).
+- Frontend: layer selector (LST/NDVI/NDBI) from a client LAYER_SPECS
+  mirror, per-layer year repopulation (S2 starts 2017), per-layer ramps +
+  legend labels, layer-aware tooltips + city summary, `setLayer` API;
+  stats cached per layer:year client-side so revisits are instant.
+- `scripts/smoke_api.py` (new): single-process smoke test — boots uvicorn
+  in a thread (sandbox reaps shell background jobs), checks all endpoints
+  + one real tile per layer (ranged GET; GEE tiles reject HEAD) + year
+  guards + headless-Chrome DOM (status Ready, 117 ward paths, GEE tile
+  requests, 0 JS errors). ALL 16 CHECKS PASSED.
+
+### Key decisions & why
+- **SCL over QA60** for S2 cloud masking: QA60 is known-unreliable on SR
+  imagery; SCL classes are explicit and bidirectional masking is simple.
+- **Index-then-median** (not band-median-then-index): medians of ratios
+  behave correctly across heterogeneous scenes.
+- **LAYERS registry** (backend) + **LAYER_SPECS mirror** (frontend): one
+  place each to add a layer; year limits/units/legends stay in sync.
+- **Ranged GET for tile checks**: GEE tile endpoint 404s on HEAD; a
+  1 KB ranged GET proves a tile serves without downloading it all.
+
+### Working / Broken
+- ✅ Working: three live layers (tiles + ward choropleth + year selector);
+  per-layer zonal caches; smoke test green.
+- ❌ Broken / blocked: /api/hotspots + /api/scenario still stubbed
+  (tasks #5–#6); landcover layer not implemented.
+
+### Next steps (for next session)
+- [ ] Task #5: persistent hotspots (top-percentile across most years) →
+      /api/hotspots.
+- [ ] Task #6: scenario fit dLST ~ dNDVI + dNDBI → /api/scenario + sliders.
+- [ ] Optional: WorldCover landcover layer for the LAYERS registry.
+
 ## 2026-09-24 (session 6) — BUGFIX: ward layer was N-S mirrored (root cause found + fixed)
 
 ### Done
@@ -350,7 +401,7 @@
 | 1 | GEE auth + first polygon-scoped data pull | done | sanity check passed 2026-09-23: echo OK, AOI 211 km², 23 scenes |
 | 2 | LST computation, one time period | done | pre-monsoon 2020–2024 composites pulled; means 314–320 K, plausible |
 | 3 | Zonal LST stats via reduceRegion | done | 114 wards, mean+p95, 2020–2024 cached; hotspot pct ranks |
-| 4 | NDVI / NDBI + WorldCover | todo | S2 SR 10 m; SCL mask; same polygon + season rule |
+| 4 | NDVI / NDBI + WorldCover | doing | NDVI+NDBI live 2026-09-24 (SCL mask, index medians, caches, UI); WorldCover pending |
 | 5 | Multi-year comparison + persistent hotspots | todo | Top-percentile-across-most-years |
 | 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | todo | Explainable coefficients; no black box |
 | 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers+comparison+wards live 2026-09-24; hotspots/scenario/gee-status wait on #4–6 |

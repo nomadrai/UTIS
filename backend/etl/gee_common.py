@@ -15,9 +15,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backend.config.settings import GEE_PROJECT_ID, load_nagpur_aoi
+from backend.config.settings import GEE_PROJECT_ID, SEASONS, load_nagpur_aoi
 
 _ee: Any = None  # module-level cache so ee.Initialize runs once per process
+
+
+def season_dates(year: int, season: str) -> tuple[str, str]:
+    """(start, end) ISO dates for one year + season window (settings.SEASONS).
+
+    'winter' wraps the calendar year boundary (Dec of `year` -> Feb of
+    `year+1`), which is how a northern-hemisphere winter actually falls.
+    Shared by every pull module so all sensors composite identical windows.
+    """
+    if season not in SEASONS:
+        raise ValueError(f"unknown season {season!r}; use {sorted(SEASONS)}")
+    window = SEASONS[season]
+    start = f"{year}-{window['start_mmdd']}"
+    end = f"{year + 1}-{window['end_mmdd']}" if season == "winter" else f"{year}-{window['end_mmdd']}"
+    return start, end
 
 
 def load_nagpur_aoi_geometry() -> dict:

@@ -49,3 +49,41 @@ export async function fetchComparison(years, layer = "lst", season = "pre-monsoo
 export async function fetchWards() {
   return getJSON("/api/wards");
 }
+
+// ---------------------------------------------------------------------------
+// Layer registry (client mirror of backend/app/api/layers.py LAYERS — the
+// backend remains authoritative; this drives UI labels + year ranges).
+// ---------------------------------------------------------------------------
+export const LAYER_SPECS = {
+  lst: {
+    label: "Land surface temperature",
+    min_year: 2013,
+    max_year: 2026,
+    units: "Kelvin",
+    legend: { low: "coolest wards", high: "hottest wards" },
+  },
+  ndvi: {
+    label: "Vegetation (NDVI)",
+    min_year: 2017, // Sentinel-2 SR coverage starts 2017-03-28
+    max_year: 2026,
+    units: "index (-1..1)",
+    legend: { low: "least vegetation", high: "most vegetation" },
+  },
+  ndbi: {
+    label: "Built-up (NDBI)",
+    min_year: 2017,
+    max_year: 2026,
+    units: "index (-1..1)",
+    legend: { low: "least built-up", high: "most built-up" },
+  },
+};
+
+/** Valid study years for a layer: last N full years with sensor coverage. */
+export function yearsForLayer(layer) {
+  const spec = LAYER_SPECS[layer] ?? LAYER_SPECS.lst;
+  const last = Math.min(spec.max_year, 2025); // 2026 not complete yet
+  const first = Math.max(spec.min_year, last - 6); // keep the selector sane
+  const years = [];
+  for (let y = first; y <= last; y++) years.push(y);
+  return years;
+}

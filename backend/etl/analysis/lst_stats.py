@@ -84,20 +84,29 @@ def ward_feature_collection() -> Any:
 # ---------------------------------------------------------------------------
 # Zonal reduction
 # ---------------------------------------------------------------------------
-def ward_year_stats(year: int, season: str = DEFAULT_SEASON) -> list[dict]:
+def ward_year_stats(
+    year: int,
+    season: str = DEFAULT_SEASON,
+    layer: str = "lst",
+    composite=None,
+) -> list[dict]:
     """Per-ward {ward_no, mean, p95} for one year's seasonal composite.
 
+    `composite(year, season)` overrides the imagery source (used by the S2
+    pull for NDVI/NDBI); defaults to the Landsat LST composite.
     One server-side reduceRegions call for all wards (mean + 95th pct,
     shared inputs). Unlabeled wards come back with ward_no=None.
     """
     ee = gee_common.get_ee()
-    composite = pull_landsat_lst.seasonal_composite(year, season)
+    if composite is None:
+        composite = pull_landsat_lst.seasonal_composite
+    img = composite(year, season)
     wards = ward_feature_collection()
 
     reducer = ee.Reducer.mean().combine(
         ee.Reducer.percentile([95]), sharedInputs=True
     )
-    reduced = composite.reduceRegions(
+    reduced = img.reduceRegions(
         collection=wards, reducer=reducer, scale=ZONAL_SCALE
     )
 
@@ -148,54 +157,80 @@ def city_wide_stats(stats: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 # Cache + yearly aggregation
 # ---------------------------------------------------------------------------
-def _cache_path(season: str) -> Path:
-    return DATA_PROCESSED_DIR / f"lst_ward_stats_{season}.json"
+def _cache_path(season: str, layer: str = "lst") -> Path:
+    return DATA_PROCESSED_DIR / f"lst_ward_stats_{layer}_{season}.json"
 
 
-def load_cached(season: str = DEFAULT_SEASON) -> dict | None:
-    """Return the cached stats file for a season, or None."""
-    path = _cache_path(season)
+def load_cached(season: str = DEFAULT_SEASON, layer: str = "lst") -> dict | None:
+    """Return the cached stats file for a season+layer, or None."""
+    path = _cache_path(season, layer)
     if not path.exists():
         return None
     with open(path) as f:
         return json.load(f)
 
 
+_LAYER_META = {
+    "lst": {
+        "units": "Kelvin",
+        "source": "Landsat 8/9 C2 L2 ST_B10 seasonal median composite",
+    },
+    "ndvi": {
+        "units": "index (-1..1)",
+        "source": "Sentinel-2 SR NDVI seasonal median composite (SCL-masked)",
+    },
+    "ndbi": {
+        "units": "index (-1..1)",
+        "source": "Sentinel-2 SR NDBI seasonal median composite (SCL-masked)",
+    },
+}
+
+
 def compute_yearly_stats(
-    years: list[int], season: str = DEFAULT_SEASON, refresh: bool = False
+    years: list[int],
+    season: str = DEFAULT_SEASON,
+    refresh: bool = False,
+    layer: str = "lst",
+    composite=None,
 ) -> dict:
     """{year: {wards: [...], city: {...}}} for the requested years.
 
-    Uses/extends the on-disk cache; only missing (or refresh=True) years
-    hit GEE. Same-season rule enforced: every year uses the same `season`
-    window (settings.SEASONS).
+    Uses/extends the on-disk cache (one file per layer+season); only
+    missing (or refresh=True) years hit GEE. Same-season rule enforced:
+    every year uses the same `season` window (settings.SEASONS).
+    `layer` is "lst" | "ndvi" | "ndbi"; `composite(year, season)` overrides
+    the imagery source accordingly.
     """
     if season not in SEASONS:
         raise ValueError(f"unknown season {season!r}; use {list(SEASONS)}")
+    if layer not in _LAYER_META:
+        raise ValueError(f"unknown layer {layer!r}; use {sorted(_LAYER_META)}")
 
-    cached = load_cached(season) or {"season": season, "years": {}}
+    cached = load_cached(season, layer) or {"season": season, "years": {}}
     years_out: dict = dict(cached.get("years", {}))
 
     for year in years:
         if not refresh and str(year) in years_out:
             continue
-        stats = add_hotspot_ranks(ward_year_stats(year, season))
+        stats = add_hotspot_ranks(
+            ward_year_stats(year, season, layer=layer, composite=composite)
+        )
         years_out[str(year)] = {
             "wards": stats,
             "city": city_wide_stats(stats),
         }
 
     payload = {
-        "layer": "lst",
+        "layer": layer,
         "season": season,
-        "units": "Kelvin",
+        "units": _LAYER_META[layer]["units"],
         "zonal_scale_m": ZONAL_SCALE,
-        "source": "Landsat 8/9 C2 L2 ST_B10 seasonal median composite",
+        "source": _LAYER_META[layer]["source"],
         "computed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "years": years_out,
     }
-    _cache_path(season).parent.mkdir(parents=True, exist_ok=True)
-    with open(_cache_path(season), "w") as f:
+    _cache_path(season, layer).parent.mkdir(parents=True, exist_ok=True)
+    with open(_cache_path(season, layer), "w") as f:
         json.dump(payload, f)
     return payload
 

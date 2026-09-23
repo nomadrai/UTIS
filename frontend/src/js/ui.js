@@ -1,23 +1,25 @@
 /**
- * UI controller — sidebar controls (task #8).
+ * UI controller — sidebar controls (task #8/#4).
  *
  * Wires:
+ *   - Layer selector: LST / NDVI / NDBI (registry-driven, api.js LAYER_SPECS).
  *   - Year selector: swaps the composite tile URL (via /api/layers) AND the
- *     choropleth values (from the /api/comparison cache) together.
- *   - Layer toggles: LST satellite tiles + ward choropleth.
+ *     choropleth values (from /api/comparison) together; repopulated per
+ *     layer (S2 layers start at 2017).
+ *   - Layer toggles: satellite tiles + ward choropleth.
  *   - Status line: async load progress / errors surfaced to the user.
  *
- * Scenario sliders land with PLAN.md tasks #6/#8 (endpoint not live yet).
+ * Scenario panel lands with PLAN.md tasks #6/#8 (endpoint not live yet).
  */
 
-import { fetchComparison } from "./api.js";
+import { fetchComparison, LAYER_SPECS, yearsForLayer } from "./api.js";
 
 /**
- * @param {object} mapApi { getState, setYear, setTilesVisible, setChoroplethVisible }
+ * @param {object} mapApi { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible }
  */
 export function initUI(mapApi) {
-  const { getState, setYear, setTilesVisible, setChoroplethVisible } = mapApi;
-  const { years, year: currentYear } = getState();
+  const { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible } = mapApi;
+  const { layer, years, year: currentYear } = getState();
 
   // --- status line -----------------------------------------------------------
   const statusEl = document.getElementById("status");
@@ -28,11 +30,25 @@ export function initUI(mapApi) {
   });
   statusEl.textContent = "Starting…";
 
-  // --- year selector -----------------------------------------------------------
-  const yearSel = document.getElementById("year-select");
-  yearSel.innerHTML = years
-    .map((y) => `<option value="${y}" ${y === currentYear ? "selected" : ""}>${y}</option>`)
+  // --- layer selector ----------------------------------------------------------
+  const layerSel = document.getElementById("layer-select");
+  layerSel.innerHTML = Object.entries(LAYER_SPECS)
+    .map(([key, spec]) => `<option value="${key}" ${key === layer ? "selected" : ""}>${spec.label}</option>`)
     .join("");
+  layerSel.addEventListener("change", () => {
+    setLayer(layerSel.value);
+    repopulateYears();
+  });
+
+  // --- year selector (per-layer year range) -------------------------------------
+  const yearSel = document.getElementById("year-select");
+  function repopulateYears() {
+    const { years: ys, year: cy } = getState();
+    yearSel.innerHTML = ys
+      .map((y) => `<option value="${y}" ${y === cy ? "selected" : ""}>${y}</option>`)
+      .join("");
+  }
+  repopulateYears();
   yearSel.addEventListener("change", () => setYear(Number(yearSel.value)));
 
   // --- layer toggles -----------------------------------------------------------
@@ -41,23 +57,27 @@ export function initUI(mapApi) {
   tilesChk.addEventListener("change", () => setTilesVisible(tilesChk.checked));
   choroplethChk.addEventListener("change", () => setChoroplethVisible(choroplethChk.checked));
 
-  // --- city summary for the selected year --------------------------------------
+  // --- city summary for the selected layer+year ----------------------------------
   const summaryEl = document.getElementById("city-summary");
-  window.addEventListener("uhi:stats", (e) => {
-    const c = e.detail?.city;
-    if (!c) return;
-    summaryEl.innerHTML =
-      `<div>City mean: <b>${(c.mean - 273.15).toFixed(1)} °C</b></div>` +
-      `<div>Hottest ward p95: <b>${(c.max - 273.15).toFixed(1)} °C</b></div>` +
-      `<div>Wards: ${c.n_wards}</div>`;
-  });
-
-  // City summary for the current year (map.js already caches comparison
-  // stats; this lightweight re-fetch keeps ui.js self-contained).
-  fetchComparison([currentYear])
-    .then((payload) => {
-      const city = payload.years?.[String(currentYear)]?.city;
-      if (city) window.dispatchEvent(new CustomEvent("uhi:stats", { detail: { city } }));
-    })
-    .catch(() => { /* map.js surfaces comparison errors */ });
+  function refreshSummary() {
+    const { layer: ly, year: cy2 } = getState();
+    const spec = LAYER_SPECS[ly];
+    summaryEl.classList.remove("placeholder");
+    fetchComparison([cy2], ly)
+      .then((payload) => {
+        const city = payload.years?.[String(cy2)]?.city;
+        if (!city) return;
+        const mean = ly === "lst" ? `${(city.mean - 273.15).toFixed(1)} °C` : city.mean.toFixed(3);
+        const max = ly === "lst" ? `${(city.max - 273.15).toFixed(1)} °C` : city.max.toFixed(3);
+        summaryEl.innerHTML =
+          `<div>City mean ${spec.label.toLowerCase()}: <b>${mean}</b></div>` +
+          `<div>Hottest ward (${spec.legend.high}): <b>${max}</b></div>` +
+          `<div>Wards: ${city.n_wards}</div>`;
+      })
+      .catch(() => { /* map.js surfaces comparison errors */ });
+  }
+  refreshSummary();
+  // Re-run when the user changes layer/year (setLayer/setYear update state first).
+  layerSel.addEventListener("change", refreshSummary);
+  yearSel.addEventListener("change", refreshSummary);
 }
