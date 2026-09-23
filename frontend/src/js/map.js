@@ -12,7 +12,7 @@
  *   - Year selector swaps BOTH the tile layer and the choropleth values.
  */
 
-import { fetchLayers, fetchComparison, fetchWards, fetchHotspots, LAYER_SPECS, yearsForLayer } from "./api.js";
+import { fetchLayers, fetchComparison, fetchWards, fetchHotspots, fetchLandcoverStats, LAYER_SPECS, yearsForLayer } from "./api.js";
 import { initUI } from "./ui.js";
 
 const DEFAULT_SEASON = "pre-monsoon";
@@ -41,6 +41,8 @@ let tileLayer = null;
 let wardLayer = null;
 let hotspotLayer = null; // L.layerGroup of persistent-hotspot markers
 let hotspotsData = null; // FeatureCollection from /api/hotspots
+let selectedWard = null; // ward_no clicked in the choropleth (scenario target)
+let landcoverStats = null; // {byWard: Map, colors, classes} — categorical layer
 
 function status(message, kind = "info") {
   window.dispatchEvent(new CustomEvent("uhi:status", { detail: { message, kind } }));
@@ -96,11 +98,20 @@ async function loadTileLayer() {
 
 function wardStyle(feature) {
   const key = joinKeyOf(feature);
-  const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
+  let fillColor = "#888";
+  if (state.layer === "landcover") {
+    // Categorical: fill = dominant WorldCover class color (no percentiles).
+    const wn = feature.properties?.ward_no;
+    const row = wn != null ? landcoverStats?.byWard.get(wn) : null;
+    if (row?.dominant) fillColor = landcoverStats.colors[String(row.dominant.value)] ?? "#888";
+  } else {
+    const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
+    if (s) fillColor = pctColor(s.hotspot_pct);
+  }
   return {
     color: "#4a5568",
     weight: 1,
-    fillColor: s ? pctColor(s.hotspot_pct) : "#888",
+    fillColor,
     fillOpacity: state.showChoropleth ? 0.55 : 0.05,
     opacity: 0.9,
   };
@@ -108,9 +119,19 @@ function wardStyle(feature) {
 
 function wardTooltip(feature) {
   const key = joinKeyOf(feature);
-  const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
   const wn = feature.properties?.ward_no;
   const name = wn == null ? "Unnumbered area" : `Ward ${wn}`;
+
+  if (state.layer === "landcover") {
+    const row = wn != null ? landcoverStats?.byWard.get(wn) : null;
+    if (!row?.dominant) return `${name}<br>no data`;
+    const top = Object.entries(row.shares)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([v, p]) => `${landcoverStats.classes[v] ?? v}: ${p}%`).join("<br>");
+    return `<b>${name}</b><br>Dominant: ${row.dominant.label} (${row.dominant.pct}%)<br>${top}<br><i>WorldCover 2021</i>`;
+  }
+
+  const s = key ? statsMapFor(state.layer, state.year).get(key) : undefined;
   if (!s || s.mean == null) return `${name}<br>no data`;
   const unit = LAYER_SPECS[state.layer]?.units ?? "";
   const meanLine =
@@ -134,6 +155,7 @@ function restyleWards() {
     l.setStyle(wardStyle(f));
     l.bindTooltip(wardTooltip(f), { sticky: true });
   });
+  highlightSelectedWard();
 }
 
 function pctColor(pct) {
@@ -150,10 +172,36 @@ async function loadWardLayer() {
     onEachFeature: (f, l) => {
       l.on("mouseover", () => l.setStyle({ weight: 2.5, color: "#1a202c" }));
       l.on("mouseout", () => l.setStyle(wardStyle(f)));
+      l.on("click", () => {
+        selectedWard = f.properties?.ward_no ?? null;
+        window.dispatchEvent(
+          new CustomEvent("uhi:ward-selected", {
+            detail: { wardNo: selectedWard },
+          })
+        );
+      });
     },
   });
   restyleWards();
   if (state.showChoropleth) wardLayer.addTo(map);
+}
+
+function highlightSelectedWard() {
+  if (!wardLayer) return;
+  wardLayer.eachLayer((l) => {
+    const isSel =
+      selectedWard != null && l.feature?.properties?.ward_no === selectedWard;
+    l.setStyle({
+      ...wardStyle(l.feature),
+      color: isSel ? "#ff2d00" : "#4a5568",
+      weight: isSel ? 3 : 1,
+      fillOpacity: isSel ? 0.7 : state.showChoropleth ? 0.55 : 0.05,
+    });
+  });
+}
+
+export function getSelectedWard() {
+  return selectedWard;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,20 +209,32 @@ async function loadWardLayer() {
 // ---------------------------------------------------------------------------
 function updateLegend() {
   if (!map) return;
-  const ramp = RAMPS[state.layer] ?? RAMPS.lst;
   const spec = LAYER_SPECS[state.layer] ?? LAYER_SPECS.lst;
   if (legendControl) legendControl.remove();
   const Legend = L.Control.extend({
     onAdd() {
       const div = L.DomUtil.create("div", "uhi-legend");
-      div.innerHTML =
-        `<b>${spec.label} — ${state.year}</b>` +
-        `<div class="uhi-legend-row">` +
-        ramp.map((c) => `<span class="uhi-legend-swatch" style="background:${c}"></span>`).join("") +
-        `</div>` +
-        `<div class="uhi-legend-labels"><span>${spec.legend.low}</span><span>${spec.legend.high}</span></div>` +
-        `<div class="uhi-legend-note">Ward color = percentile within ${state.year}; ` +
-        `satellite tint = ${state.layer.toUpperCase()} (fixed ${state.visRange?.[0]}–${state.visRange?.[1]} ${spec.units})</div>`;
+      if (state.layer === "landcover" && landcoverStats) {
+        // Categorical legend: one swatch row per WorldCover class.
+        div.innerHTML =
+          `<b>${spec.label}</b>` +
+          Object.entries(landcoverStats.classes)
+            .map(([v, label]) =>
+              `<div class="uhi-legend-class">` +
+              `<span class="uhi-legend-swatch" style="background:${landcoverStats.colors[v]}; flex:0 0 14px; margin-right:6px"></span>${label}</div>`)
+            .join("") +
+          `<div class="uhi-legend-note">Ward fill = dominant class; hover for class shares</div>`;
+      } else {
+        const ramp = RAMPS[state.layer] ?? RAMPS.lst;
+        div.innerHTML =
+          `<b>${spec.label} — ${state.year}</b>` +
+          `<div class="uhi-legend-row">` +
+          ramp.map((c) => `<span class="uhi-legend-swatch" style="background:${c}"></span>`).join("") +
+          `</div>` +
+          `<div class="uhi-legend-labels"><span>${spec.legend.low}</span><span>${spec.legend.high}</span></div>` +
+          `<div class="uhi-legend-note">Ward color = percentile within ${state.year}; ` +
+          `satellite tint = ${state.layer.toUpperCase()} (fixed ${state.visRange?.[0]}–${state.visRange?.[1]} ${spec.units})</div>`;
+      }
       return div;
     },
   });
@@ -238,6 +298,14 @@ export function setHotspotsVisible(v) {
 // ---------------------------------------------------------------------------
 // Public API (used by ui.js)
 // ---------------------------------------------------------------------------
+async function ensureLandcoverStats() {
+  if (landcoverStats) return;
+  const payload = await fetchLandcoverStats();
+  const byWard = new Map();
+  for (const row of payload.wards) byWard.set(row.ward_no, row);
+  landcoverStats = { byWard, colors: payload.class_colors, classes: payload.classes };
+}
+
 export async function setLayer(layer) {
   if (!LAYER_SPECS[layer]) return;
   if (layer === state.layer) return;
@@ -245,10 +313,14 @@ export async function setLayer(layer) {
   const years = yearsForLayer(layer);
   if (!years.includes(state.year)) state.year = years[years.length - 1];
   status(`Switching to ${LAYER_SPECS[layer].label}…`);
-  await Promise.allSettled([loadTileLayer(), loadComparison(layer, years)]);
+  // Categorical layers have no /api/comparison — load their stats instead.
+  const loads = LAYER_SPECS[layer].categorical
+    ? [loadTileLayer(), ensureLandcoverStats()]
+    : [loadTileLayer(), loadComparison(layer, years)];
+  await Promise.allSettled(loads);
   restyleWards();
   updateLegend();
-  status(`${LAYER_SPECS[layer].label}, ${state.year} ${state.season} — updated`);
+  status(`${LAYER_SPECS[layer].label}, ${state.year} — updated`);
 }
 
 export async function setYear(year) {
@@ -339,6 +411,7 @@ export async function initMap() {
     setTilesVisible,
     setChoroplethVisible,
     setHotspotsVisible,
+    getSelectedWard,
   });
 
   status("Ready");

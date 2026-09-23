@@ -31,6 +31,12 @@ def get_comparison(
     spec = LAYERS.get(layer)
     if spec is None:
         raise HTTPException(400, f"layer {layer!r} not available — use {sorted(LAYERS)}")
+    if spec.get("categorical"):
+        raise HTTPException(
+            400,
+            f"{layer} is a categorical snapshot — per-ward class shares live "
+            "at /api/landcover-stats, not /api/comparison",
+        )
     if season not in SEASONS:
         raise HTTPException(400, f"season must be one of {sorted(SEASONS)}")
 

@@ -47,6 +47,7 @@
     .uhi-legend-swatch:last-child { border-radius: 0 3px 3px 0; }
     .uhi-legend-labels { display: flex; justify-content: space-between; margin-top: 3px; }
     .uhi-legend-note { margin-top: 5px; color: #9ab; }
+    .uhi-legend-class { display: flex; align-items: center; font-size: 0.78rem; margin: 1px 0; }
 
     .uhi-error {
       height: 100%; display: flex; flex-direction: column;
@@ -61,6 +62,20 @@
       font-size: 11px; font-weight: 700; line-height: 22px;
       text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
     }
+
+    #scenario-zone {
+      width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #456;
+      background: #24303d; color: #eee; font-size: 0.9rem;
+    }
+    #scenario-result { font-size: 0.85rem; line-height: 1.55; margin-top: 10px; }
+    .uhi-scenario-big { font-size: 1.5rem; font-weight: 700; color: #fff; }
+    .uhi-equation { margin: 6px 0; }
+    .uhi-equation code {
+      background: #24303d; padding: 4px 6px; border-radius: 4px;
+      font-size: 0.78rem; display: block; word-break: break-word;
+    }
+    .uhi-warn { color: #ffc078; margin-top: 4px; }
+    input[type="range"] { width: 100%; accent-color: #4dabf7; }
   </style>
 </head>
 <body>
@@ -93,9 +108,16 @@
 
       <div class="ctrl">
         <h3>Scenario</h3>
-        <p class="placeholder">Sliders: hypothetical vegetation / built-up
-        change per zone; results panel explains the estimated LST impact
-        (wired with tasks #6/#8).</p>
+        <select id="scenario-zone" aria-label="Scenario zone"></select>
+        <label style="margin-top:10px">Vegetation change
+          <input type="range" id="scenario-veg" min="-50" max="50" step="5" value="0" />
+          <b id="scenario-veg-val">0%</b>
+        </label>
+        <label>Built-up change
+          <input type="range" id="scenario-built" min="-50" max="50" step="5" value="0" />
+          <b id="scenario-built-val">0%</b>
+        </label>
+        <div id="scenario-result" class="placeholder">Choose a zone and drag the sliders — the estimate updates live, with the fitted equation that produced it.</div>
       </div>
     </div>
     <div id="map"></div>

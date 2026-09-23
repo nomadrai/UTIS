@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.config.settings import REPO_ROOT
 from backend.app.api.layers import router as layers_router
 from backend.app.api.comparison import router as comparison_router
+from backend.app.api.landcover_stats import router as landcover_stats_router
 from backend.app.api.wards import router as wards_router
 from backend.app.api.hotspots import router as hotspots_router
 from backend.app.api.scenario import router as scenario_router
@@ -30,6 +31,7 @@ app = FastAPI(
 
 app.include_router(layers_router)
 app.include_router(comparison_router)
+app.include_router(landcover_stats_router)
 app.include_router(wards_router)
 app.include_router(hotspots_router)
 app.include_router(scenario_router)

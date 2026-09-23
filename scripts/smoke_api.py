@@ -124,6 +124,60 @@ def main() -> None:
     g0 = hs_geo["features"][0]["geometry"] if hs_geo["features"] else None
     check("hotspots with_geometry", g0 is not None and g0.get("type") in ("Polygon", "MultiPolygon"))
 
+    # --- scenario (task #6) --------------------------------------------------------
+    def post_json(path: str, payload: dict):
+        req = urllib.request.Request(
+            BASE + path,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.load(r)
+
+    sc = post_json("/api/scenario", {"zone_id": "15", "veg_delta": -20, "builtup_delta": 0})
+    ex = sc.get("explanation", {})
+    check("scenario ward 15 estimate", isinstance(sc.get("est_lst_change_c"), (int, float)),
+          f"{sc.get('est_lst_change_c')} °C, baseline {sc.get('baseline')}")
+    check("scenario explanation complete",
+          all(k in ex for k in ("equation", "coef", "p", "r2", "n", "signs_as_expected")),
+          f"n={ex.get('n')}, r2={round(ex.get('r2', 0), 2)}, signs_ok={ex.get('signs_as_expected')}")
+    sc_city = post_json("/api/scenario", {"zone_id": "city", "veg_delta": 10, "builtup_delta": -5})
+    check("scenario city fallback", isinstance(sc_city.get("est_lst_change_c"), (int, float)))
+    try:
+        post_json("/api/scenario", {"zone_id": "999", "veg_delta": 5, "builtup_delta": 5})
+        check("scenario unknown ward rejected", False, "expected 400")
+    except urllib.error.HTTPError as e:
+        check("scenario unknown ward rejected", e.code == 400)
+    try:
+        post_json("/api/scenario", {"zone_id": "15", "veg_delta": 150, "builtup_delta": 0})
+        check("scenario delta bounds", False, "expected 422")
+    except urllib.error.HTTPError as e:
+        check("scenario delta bounds", e.code == 422)
+    check("scenario signs physical", ex.get("signs_as_expected") is True,
+          f"coef {ex.get('coef')}")
+
+    # --- landcover (task #4 completion) --------------------------------------------
+    lc = get_json("/api/layers?year=2021&layer=landcover")
+    check("landcover tile", "earthengine.googleapis.com" in lc.get("tile_url", ""),
+          f"units {lc.get('units')}")
+    try:
+        get_json("/api/layers?year=2024&layer=landcover")
+        check("landcover year pinned", False, "expected 400")
+    except urllib.error.HTTPError as e:
+        check("landcover year pinned", e.code == 400)
+    try:
+        get_json("/api/comparison?years=2021&layer=landcover")
+        check("landcover comparison blocked", False, "expected 400")
+    except urllib.error.HTTPError as e:
+        check("landcover comparison blocked", e.code == 400)
+    lcs = get_json("/api/landcover-stats")
+    dom0 = lcs["wards"][0]["dominant"] if lcs.get("wards") else None
+    check("landcover stats",
+          len(lcs.get("wards", [])) == 114 and dom0 is not None
+          and "class_colors" in lcs,
+          f"sample dominant: {dom0}")
+
     # --- headless Chrome render ------------------------------------------------------
     subprocess.run(
         ["rm", "-rf", "/tmp/uhi_smoke_profile"], check=False
@@ -152,6 +206,10 @@ def main() -> None:
           f"{dom_html.count('<path')} paths")
     check("chrome gee tiles requested", dom_html.count("earthengine") > 0)
     check("chrome hotspot pins", dom_html.count("uhi-hotspot-pin") >= 1)
+    check("chrome scenario panel", "scenario-result" in dom_html and "°C" in dom_html,
+          "panel rendered with an estimate")
+    check("chrome 4 layer options", dom_html.count("<option value=") >= 13)
+    # 4 layers + 7 years minimum
     check("chrome no js errors",
           "Uncaught" not in dom.stderr and "TypeError" not in dom.stderr)
 

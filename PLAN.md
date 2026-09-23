@@ -26,6 +26,102 @@
 
 ---
 
+## 2026-09-24 (session 10) — WorldCover landcover layer (task #4 completion) — BOARD FULLY DONE
+
+### Done
+- `backend/etl/gee_pulls/pull_worldcover.py` (new): ESA WorldCover v200 —
+  a SINGLE-YEAR (2021) 10 m categorical snapshot, deliberately outside the
+  year-selector model. Full 10-class table with legend colors; tile vis
+  params; sanity check (AOI top classes: Built-up 57.7%, Grassland 16.2%,
+  Tree 13.7%, Cropland 9.2%, Water 1.5% — plausible for Nagpur); per-ward
+  CLASS-SHARE stats via pixelArea-weighted grouped reduceRegions (a mean
+  of class codes is meaningless — shares are the right categorical
+  summary); cached to data/processed/worldcover_ward_stats.json.
+- Registry: "landcover" entry with min_year=max_year=2021 + `categorical:
+  true` flag; max_year filled for all layers so validation uses one code
+  path; layer-agnostic coverage error message. /api/comparison now
+  explicitly rejects categorical layers (400).
+- `GET /api/landcover-stats` (new): cached per-ward shares + dominant
+  class + class colors; 404 until the CLI has been run.
+- Frontend: landcover layer in the selector — ward fill = DOMINANT class
+  color (not percentile), class-share tooltips (top-3), categorical legend
+  (one swatch per class), year selector pins to 2021, city summary
+  replaced by an explanatory note for the snapshot layer.
+- Central wards 54–90% Built-up (ward 4 is 90% built) — consistent with
+  the persistent-hotspot picture.
+- Smoke suite extended to 34 checks (tile, year-pin guard, comparison
+  block, stats payload, 4 layer options in headless DOM) → ALL PASSED.
+
+### Key decisions & why
+- **Categorical ≠ continuous**: WorldCover gets a different stats endpoint
+  and a different choropleth semantic (dominant class, not percentile) —
+  forcing it through /api/comparison would have produced nonsense means.
+- **Year pinned to 2021**: the snapshot is what it is; the UI disables
+  year choice rather than silently compositing wrong years.
+
+### Working / Broken
+- ✅ Working: FOUR layers (lst/ndvi/ndbi/landcover), all endpoints, 34-check
+  smoke suite green. Task board: every row done.
+- ❌ Broken / blocked: nothing.
+
+### Next steps (for next session)
+- [ ] Commit the scenario + landcover work (last uncommitted changes).
+- [ ] Optional: README quickstart; gee-status polish; zone-name extraction
+      from the prabhag panel; more seasons cached.
+
+## 2026-09-24 (session 9) — Task #6: scenario fit dLST ~ dNDVI + dNDBI + /api/scenario + sliders — TASK BOARD COMPLETE
+
+### Done
+- `backend/etl/analysis/scenario.py` (new): ward×year delta panel from the
+  three per-layer caches (456 ward-year pairs for pre-monsoon 2019–2025),
+  plain OLS dLST ~ 1 + dNDVI + dNDBI with classical se/t/p, r², residual
+  std, memoized per season. Prediction: slider %s applied to the zone's
+  baseline mean NDVI/NDBI → plugged into the fitted equation; estimates
+  beyond ±5 °C or far outside the observed dLST range carry explicit
+  extrapolation warnings.
+- **The fitted model**: dLST = −0.49 − 1.19·dNDVI + 110.5·dNDBI (K),
+  n=456, r²=0.31. Signs physically correct (vegetation cools, built-up
+  warms); dNDBI highly significant (p<0.0001), dNDVI not (p=0.90 —
+  year-to-year NDVI deltas are small/noisy; surfaced honestly in the UI,
+  not hidden).
+- `POST /api/scenario` (stub replaced): pydantic bounds ±100%, zone_id =
+  ward number or "city" (mean-of-ward-baselines fallback); 400 unknown
+  zone, 404 missing caches, 503 un-fittable panel. Sample: ward 15
+  −20% vegetation → −0.43 °C; +10% built-up → +0.80 °C.
+- Frontend: scenario zone dropdown (city + 107 numbered wards, synced
+  two-way with map clicks — choropleth wards now select + highlight red),
+  vegetation/built-up sliders (−50..+50%), live debounced estimates, and
+  the explanation panel: big ±°C number, the fitted equation, n/r²/sign
+  note, per-term p-values, applied deltas, warnings.
+- `scripts/smoke_api.py` extended to 29 checks (scenario estimate,
+  explanation completeness, city fallback, unknown-ward 400, bounds 422,
+  physical signs, panel renders in headless Chrome) → ALL PASSED.
+
+### Key decisions & why
+- **Explainable OLS only** (locked design): the UI prints the actual
+  fitted equation + diagnostics; no ML. The scenario number is only ever
+  as good as the panel — warnings flag extrapolation instead of
+  pretending precision.
+- **Deltas applied to baseline indices**: % vegetation maps through the
+  ward's own NDVI baseline (ΔNDVI = pct/100 · NDVI_base) so the same
+  slider means different things in green vs concrete wards.
+- **Map-click ↔ dropdown sync**: selecting a ward is one gesture; the
+  scenario panel follows the map.
+
+### Working / Broken
+- ✅ Working: FULL pipeline — 3 satellite layers, ward choropleth,
+  persistent hotspots, scenario what-ifs; all endpoints live; 29-check
+  smoke suite green.
+- ❌ Broken / blocked: nothing blocking. Optional leftovers: WorldCover
+  landcover layer, gee-status gee_authenticated polish, zone metadata
+  (10-zone rollup).
+
+### Next steps (for next session)
+- [ ] Optional: WorldCover landcover layer in the LAYERS registry.
+- [ ] Optional: zone-level (10-zone) rollup alongside wards.
+- [ ] Consider: commit the whole MVP; write a short demo script/README
+      section for first-run.
+
 ## 2026-09-24 (session 8) — Task #5: persistent hotspot detection + /api/hotspots
 
 ### Done
@@ -452,9 +548,9 @@
 | 1 | GEE auth + first polygon-scoped data pull | done | sanity check passed 2026-09-23: echo OK, AOI 211 km², 23 scenes |
 | 2 | LST computation, one time period | done | pre-monsoon 2020–2024 composites pulled; means 314–320 K, plausible |
 | 3 | Zonal LST stats via reduceRegion | done | 114 wards, mean+p95, 2020–2024 cached; hotspot pct ranks |
-| 4 | NDVI / NDBI + WorldCover | doing | NDVI+NDBI live 2026-09-24 (SCL mask, index medians, caches, UI); WorldCover pending |
+| 4 | NDVI / NDBI + WorldCover | done | NDVI+NDBI live (session 7); WorldCover 2021 snapshot + class-share stats live (session 10) |
 | 5 | Multi-year comparison + persistent hotspots | done | 7 persistent wards found (pct90/frac0.7, 7 years); /api/hotspots live |
-| 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | todo | Explainable coefficients; no black box |
-| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers/comparison/wards/hotspots live; scenario waits on #6; gee-status pending |
-| 8 | Frontend wiring | doing | map+choropleth+year selector live 2026-09-24; scenario panel waits on #6 |
+| 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | done | fitted (n=456, r²=0.31, signs physical); /api/scenario + sliders live |
+| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | done | all five + /api/wards live 2026-09-24; 29-check smoke suite |
+| 8 | Frontend wiring | done | map, choropleth, hotspot pins, layer/year selectors, scenario panel live |
 | 9 | Docs: methodology write-up | todo | Compositing, masking, regression fit, caveats |

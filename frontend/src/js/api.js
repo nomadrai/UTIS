@@ -51,6 +51,15 @@ export async function fetchWards() {
 }
 
 /**
+ * GET /api/landcover-stats
+ * -> { year, classes: {value: label}, class_colors: {value: hex},
+ *      wards: [{ward_no, shares, dominant}] } — categorical layer stats.
+ */
+export async function fetchLandcoverStats() {
+  return getJSON("/api/landcover-stats");
+}
+
+/**
  * GET /api/hotspots?pct=..&min_year_frac=..
  * -> FeatureCollection of persistent hotspot wards (LST), geometry null —
  *    joined client-side to the already-loaded ward polygons by ward_no.
@@ -59,6 +68,29 @@ export async function fetchHotspots(pct = 90, minYearFrac = 0.7, season = "pre-m
   return getJSON(
     `/api/hotspots?pct=${pct}&min_year_frac=${minYearFrac}&season=${encodeURIComponent(season)}`
   );
+}
+
+/**
+ * POST /api/scenario { zone_id, veg_delta, builtup_delta }
+ * -> { zone_id, est_lst_change_c, explanation: { equation, coef, se, t, p,
+ *      r2, n, signs_as_expected, warnings } }
+ */
+export async function postScenario(zoneId, vegDelta, builtupDelta) {
+  const res = await fetch(`${API_BASE}/api/scenario`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      zone_id: String(zoneId),
+      veg_delta: vegDelta,
+      builtup_delta: builtupDelta,
+    }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep */ }
+    throw new Error(`scenario → ${res.status}: ${detail}`);
+  }
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +119,17 @@ export const LAYER_SPECS = {
     units: "index (-1..1)",
     legend: { low: "least built-up", high: "most built-up" },
   },
+  landcover: {
+    label: "Land cover (WorldCover 2021)",
+    min_year: 2021, // single-year snapshot — year selector will pin to 2021
+    max_year: 2021,
+    units: "class",
+    categorical: true, // ward fill = dominant class, not percentile
+    legend: { low: "less of class", high: "more of class" }, // unused when categorical
+  },
 };
+
+export const LANDCOVER_COLORS = null; // filled at runtime from /api/landcover-stats class_colors
 
 /** Valid study years for a layer: last N full years with sensor coverage. */
 export function yearsForLayer(layer) {

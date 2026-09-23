@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config.settings import SEASONS
 from backend.etl import gee_common
-from backend.etl.gee_pulls import pull_landsat_lst, pull_s2_indices
+from backend.etl.gee_pulls import pull_landsat_lst, pull_s2_indices, pull_worldcover
 
 router = APIRouter()
 
@@ -26,6 +26,11 @@ def _ndvi_composite(year: int, season: str):
 
 def _ndbi_composite(year: int, season: str):
     return pull_s2_indices.seasonal_composite(year, season, "ndbi")
+
+
+def _landcover_composite(year: int, season: str):
+    # Single-year snapshot: year is already validated to be 2021.
+    return pull_worldcover.worldcover_image()
 
 
 LAYERS: dict[str, dict] = {
@@ -50,7 +55,21 @@ LAYERS: dict[str, dict] = {
         "source": "Sentinel-2 SR NDBI, SCL-masked seasonal median composite",
         "units": "index (-1..1)",
     },
+    "landcover": {
+        "composite": _landcover_composite,
+        "vis_params": pull_worldcover.VIS_PARAMS,
+        "min_year": pull_worldcover.WORLDCOVER_YEAR,  # single-year snapshot
+        "max_year": pull_worldcover.WORLDCOVER_YEAR,
+        "source": "ESA WorldCover v200 (2021 snapshot, 10 m)",
+        "units": "class",
+        "categorical": True,  # no /api/comparison — stats via /api/landcover-stats
+    },
 }
+
+# Backwards-compat: registry previously had no max_year key on the
+# continuous layers — fill it so validation can use one code path.
+for _spec in LAYERS.values():
+    _spec.setdefault("max_year", 2026)
 
 
 @router.get("/api/layers")
@@ -72,11 +91,11 @@ def get_layers(year: int, layer: str = "lst", season: str = "pre-monsoon") -> di
         )
     if season not in SEASONS:
         raise HTTPException(400, f"season must be one of {sorted(SEASONS)}")
-    if year < spec["min_year"] or year > 2026:
+    if year < spec["min_year"] or year > spec["max_year"]:
         raise HTTPException(
             400,
-            f"{layer} covers {spec['min_year']}-2026; {year} has no "
-            f"{'Sentinel-2' if spec['min_year'] > 2013 else 'Landsat 8/9'} coverage",
+            f"{layer} covers {spec['min_year']}-{spec['max_year']}; "
+            f"{year} is outside its coverage",
         )
 
     try:
