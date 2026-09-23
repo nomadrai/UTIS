@@ -26,6 +26,42 @@
 
 ---
 
+## 2026-09-24 (session 11) — Task #9: methodology write-up (docs/METHODOLOGY.md) — BOARD 9/9
+
+### Done
+- `docs/METHODOLOGY.md` (new, ~10 sections): study design (AOI rule,
+  season rule, server-side policy), ward-zone provenance incl. the PDF
+  mirror incident as documented history, LST compositing + QA_PIXEL
+  masking, S2 SCL masking + index-before-median rule, WorldCover
+  snapshot/class-share rationale, zonal stats + within-year percentile
+  methodology, persistent-hotspot rule with current results, the scenario
+  fit with the actual fitted equation + honest p-values, consolidated
+  caveats (8 numbered), and reproducibility commands for every published
+  number.
+- README: methodology link, `docs/` in the structure tree, run
+  instructions corrected to reality (server serves the frontend;
+  127.0.0.1-not-localhost note; cache-pull commands; smoke test).
+- PROJECT.md: stale "no logic implemented yet" status line replaced with
+  the MVP-complete status + methodology link.
+
+### Key decisions & why
+- **One methodology file, code-linked, caveat-forward**: the audience is
+  a future maintainer (or reviewer) asking "can I trust this number?" —
+  every section ends in the caveat that applies, and §9 consolidates
+  them; reproducibility commands live in one place.
+- **The mirror incident stays in the docs**: it is the strongest argument
+  for the QA-overlay step in the reproducibility list.
+
+### Working / Broken
+- ✅ Working: docs complete and cross-linked; app + 34-check suite green.
+- ❌ Broken / blocked: nothing.
+
+### Next steps (for next session)
+- [ ] Commit everything (scenario + WorldCover + docs are uncommitted).
+- [ ] Optional: gee-status polish; zone-name extraction from the prabhag
+      panel; additional seasons cached; offline unit tests for
+      fit/detection/join logic.
+
 ## 2026-09-24 (session 10) — WorldCover landcover layer (task #4 completion) — BOARD FULLY DONE
 
 ### Done
@@ -553,4 +589,4 @@
 | 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | done | fitted (n=456, r²=0.31, signs physical); /api/scenario + sliders live |
 | 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | done | all five + /api/wards live 2026-09-24; 29-check smoke suite |
 | 8 | Frontend wiring | done | map, choropleth, hotspot pins, layer/year selectors, scenario panel live |
-| 9 | Docs: methodology write-up | todo | Compositing, masking, regression fit, caveats |
+| 9 | Docs: methodology write-up | done | docs/METHODOLOGY.md: 10 sections + caveats + repro commands; README/PROJECT cross-linked |

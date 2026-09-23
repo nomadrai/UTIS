@@ -1,7 +1,7 @@
 # Urban Heat Island Intelligence Platform — Nagpur
 
-**Status:** scaffolding complete, no logic implemented yet.
-**Session log:** see [PLAN.md](PLAN.md) · **Setup:** see [README.md](README.md)
+**Status:** MVP complete — all analysis tasks implemented and smoke-tested (2026-09-24). See the task board in [PLAN.md](PLAN.md).
+**How the analysis works:** [docs/METHODOLOGY.md](docs/METHODOLOGY.md) · **Session log:** [PLAN.md](PLAN.md) · **Setup:** [README.md](README.md)
 
 ---
 

@@ -6,6 +6,7 @@ Nagpur, and estimates how land-cover changes (vegetation, built-up area) could
 shift surface temperature distribution.
 
 - **What this project is / is not:** [PROJECT.md](PROJECT.md)
+- **How the analysis works — methodology, fitted model, caveats:** [docs/METHODOLOGY.md](docs/METHODOLOGY.md)
 - **Session log & task board:** [PLAN.md](PLAN.md)
 
 ## Stack
@@ -50,19 +51,42 @@ cp backend/.env.example backend/.env
 # 4. Sanity-check that GEE works (pulls a tiny image collection count)
 python -m backend.etl.gee_pulls.pull_landsat_lst --sanity-check
 
-# 5. Start the API server
+# 5. Start the API server (it serves the frontend too)
 uvicorn backend.app.main:app --reload
-#    Swagger UI: http://localhost:8000/docs
-
-# 6. Frontend — open in a browser (or serve statically):
-frontend/index.html
+#    App:     http://127.0.0.1:8000   (use 127.0.0.1 — some systems resolve
+#    Swagger: http://127.0.0.1:8000/docs   localhost to IPv6 first)
 ```
+
+## Data caches & verification
+
+The API serves per-ward statistics from JSON caches in `data/processed/`.
+Missing years compute on demand via GEE on first request; regenerate
+deliberately with `--refresh`:
+
+```bash
+python -m backend.etl.gee_pulls.pull_landsat_lst --zonal-stats --years 2019 2020 2021 2022 2023 2024 2025
+python -m backend.etl.gee_pulls.pull_s2_indices   --zonal-stats --years 2020 2021 2022 2023 2024 2025
+python -m backend.etl.gee_pulls.pull_worldcover   --zonal-stats
+```
+
+Full end-to-end verification (boots the server in-process, checks every
+endpoint + a real tile per layer + a headless-browser render; needs GEE
+auth):
+
+```bash
+python -m scripts.smoke_api
+```
+
+How every published number is computed — compositing, masking, the
+scenario fit, and all caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 ## Project structure
 
 ```
 ├── PROJECT.md              # Problem statement, scope, stack & data sources
 ├── PLAN.md                 # Living session log + task board
+├── docs/
+│   └── METHODOLOGY.md      # How every number is computed + caveats
 ├── backend/
 │   ├── app/                # API layer (FastAPI) — routes, services
 │   ├── etl/
