@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UHI Nagpur — Urban Heat Island Intelligence Platform</title>
+  <!-- Leaflet via CDN (no build step). Map logic lands in a later session. -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #layout { display: flex; height: 100vh; }
+    #sidebar {
+      width: 320px; padding: 16px; box-sizing: border-box;
+      background: #1c2733; color: #eee; overflow-y: auto;
+    }
+    #map { flex: 1; }
+    .placeholder { color: #9ab; font-size: 0.9rem; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div id="layout">
+    <div id="sidebar">
+      <h1>UHI Nagpur</h1>
+      <p class="placeholder">
+        Controls (year switcher, hotspot overlay, scenario sliders) will be
+        wired up in a later session — see PLAN.md tasks #9–#10.
+      </p>
+    </div>
+    <div id="map"></div>
+  </div>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="src/js/map.js"></script>
+</body>
+</html>

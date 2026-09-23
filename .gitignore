@@ -1,0 +1,29 @@
+# Environments / secrets
+.venv/
+venv/
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data — never commit pulled rasters or credentials
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
