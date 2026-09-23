@@ -1,32 +1,51 @@
 /**
  * API client — the ONLY module that talks to the backend.
  *
- * Endpoints (see backend/app/api/): layers, comparison, hotspots, scenario,
- * gee-status. Fetch wrappers land with PLAN.md task #8; stubs now.
+ * Endpoints (see backend/app/api/): layers, comparison, wards, hotspots,
+ * scenario, gee-status. hotspots/scenario land with PLAN.md tasks #5–#6.
  */
 
-const API_BASE = "http://localhost:8000";
+// Same-origin when the API serves this frontend (mounted in main.py) — the
+// normal case. If index.html is opened via file:// (origin "null"), fall
+// back to the dev API origin; CORS is configured to allow it.
+const API_BASE =
+  window.location.protocol === "file:" ? "http://localhost:8000" : "";
 
-export async function fetchLayers(year, layer) {
-  // GET /api/layers?year=..&layer=lst|ndvi|ndbi|landcover
-  // -> { tile_url, vis_params, valid_min, valid_max }
-  throw new Error("Wired in PLAN.md task #8");
+async function getJSON(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep statusText */ }
+    throw new Error(`${path} → ${res.status}: ${detail}`);
+  }
+  return res.json();
 }
 
-export async function fetchComparison(years, layer = "lst") {
-  // GET /api/comparison?years=2020,2022,2024&layer=lst
-  // -> { layer: { year: stats } }
-  throw new Error("Wired in PLAN.md task #8");
+/**
+ * GET /api/layers?year=..&layer=lst&season=..
+ * -> { tile_url, vis_params, bbox_wsen, units, ... }
+ */
+export async function fetchLayers(year, layer = "lst", season = "pre-monsoon") {
+  return getJSON(
+    `/api/layers?year=${encodeURIComponent(year)}&layer=${encodeURIComponent(layer)}&season=${encodeURIComponent(season)}`
+  );
 }
 
-export async function fetchHotspots(pct = 90, minYearFrac = 0.7) {
-  // GET /api/hotspots?pct=..&min_year_frac=..
-  // -> GeoJSON of persistent hotspot zones (Nagpur polygon only)
-  throw new Error("Wired in PLAN.md task #8");
+/**
+ * GET /api/comparison?years=2020,2022,2024&layer=lst
+ * -> { layer, season, units, years: { "<year>": { wards: [...], city: {...} } } }
+ */
+export async function fetchComparison(years, layer = "lst", season = "pre-monsoon") {
+  const y = Array.isArray(years) ? years.join(",") : years;
+  return getJSON(
+    `/api/comparison?years=${encodeURIComponent(y)}&layer=${encodeURIComponent(layer)}&season=${encodeURIComponent(season)}`
+  );
 }
 
-export async function postScenario(zoneId, vegDelta, builtupDelta) {
-  // POST /api/scenario { zone_id, veg_delta, builtup_delta }
-  // -> { est_lst_change_c, explanation: { coefficients, r2, n } }
-  throw new Error("Wired in PLAN.md task #8");
+/**
+ * GET /api/wards
+ * -> FeatureCollection of the 114 georeferenced wards (ward_no may be null)
+ */
+export async function fetchWards() {
+  return getJSON("/api/wards");
 }

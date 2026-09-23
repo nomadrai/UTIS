@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UHI Nagpur — Urban Heat Island Intelligence Platform</title>
-  <!-- Leaflet via CDN (no build step). Map logic lands in a later session. -->
+  <!-- Leaflet via CDN (no build step). -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -22,6 +22,38 @@
     .placeholder { color: #9ab; font-size: 0.9rem; line-height: 1.5; }
     .ctrl { margin-bottom: 20px; }
     .ctrl h3 { margin: 0 0 8px; font-size: 0.95rem; color: #fff; }
+    .ctrl label { display: block; margin: 6px 0; font-size: 0.9rem; }
+    .ctrl select {
+      width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #456;
+      background: #24303d; color: #eee; font-size: 0.95rem;
+    }
+    #status {
+      font-size: 0.85rem; padding: 8px; border-radius: 4px;
+      background: #24303d; color: #9ab; min-height: 1.2em;
+    }
+    #status[data-kind="error"] { color: #ff8a80; }
+    #status[data-kind="ok"] { color: #8ce99a; }
+    #city-summary { font-size: 0.9rem; line-height: 1.6; color: #cdd7e1; }
+    #city-summary b { color: #fff; }
+
+    .uhi-legend {
+      background: rgba(28, 39, 51, 0.92); color: #eee;
+      padding: 8px 10px; border-radius: 6px; font-size: 0.8rem;
+      max-width: 260px; line-height: 1.5;
+    }
+    .uhi-legend-row { display: flex; }
+    .uhi-legend-swatch { flex: 1; height: 12px; }
+    .uhi-legend-swatch:first-child { border-radius: 3px 0 0 3px; }
+    .uhi-legend-swatch:last-child { border-radius: 0 3px 3px 0; }
+    .uhi-legend-labels { display: flex; justify-content: space-between; margin-top: 3px; }
+    .uhi-legend-note { margin-top: 5px; color: #9ab; }
+
+    .uhi-error {
+      height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center;
+      color: #556; gap: 4px; padding: 24px; box-sizing: border-box;
+    }
+    .uhi-error code { background: #eef; padding: 2px 6px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -30,22 +62,31 @@
       <h1>UHI Nagpur</h1>
 
       <div class="ctrl">
-        <h3>Layers</h3>
-        <p class="placeholder">LST heatmap / NDVI / NDBI / hotspot markers —
-        toggles wired in task #8.</p>
+        <h3>Status</h3>
+        <div id="status">Starting…</div>
       </div>
 
       <div class="ctrl">
         <h3>Year</h3>
-        <p class="placeholder">Year selector for multi-temporal comparison —
-        wired in task #8.</p>
+        <select id="year-select" aria-label="Study year"></select>
+      </div>
+
+      <div class="ctrl">
+        <h3>Layers</h3>
+        <label><input type="checkbox" id="toggle-tiles" checked /> Satellite LST (Google Earth Engine)</label>
+        <label><input type="checkbox" id="toggle-choropleth" checked /> Ward hotspot choropleth</label>
+      </div>
+
+      <div class="ctrl">
+        <h3>City summary</h3>
+        <div id="city-summary" class="placeholder">Loading…</div>
       </div>
 
       <div class="ctrl">
         <h3>Scenario</h3>
         <p class="placeholder">Sliders: hypothetical vegetation / built-up
         change per zone; results panel explains the estimated LST impact
-        (wired in task #8).</p>
+        (wired with tasks #6/#8).</p>
       </div>
     </div>
     <div id="map"></div>

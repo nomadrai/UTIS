@@ -1,6 +1,10 @@
 """One-off: extract Nagpur ward polygons from the MRSAC CIS-2005 ward-map PDF.
 
 Pipeline (ward panel of 504887890-Nagpur-WARD-Map.pdf):
+    0. Mirror ingest to map space: the source PDF's map content is
+       vertically mirrored (inverted-y authoring) — segments and labels
+       are reflected at extraction, see _to_map_space (found 2026-09-24
+       after the ward layer rendered N-S flipped against GEE LST tiles).
     1. Pull the gray boundary strokes (color ~0.431, width 0.48) — the ward
        boundary class — as line segments in PDF points.
     2. Snap endpoints into a planar graph, polygonize with shapely -> faces.
@@ -56,8 +60,30 @@ UTM = "EPSG:32644"       # UTM 44N — Nagpur
 # --------------------------------------------------------------------------
 # 1. Extraction
 # --------------------------------------------------------------------------
+def _to_map_space(frame: pymupdf.Rect, y: float) -> float:
+    """PDF y (down) -> map-space y (up), reflected across the frame midline.
+
+    ROOT-CAUSE FIX (2026-09-24): the source PDF's map content is authored
+    VERTICALLY MIRRORED — the map block was drawn with an inverted y-axis,
+    so north prints where south belongs (zone-label compass check:
+    Laxmi Nagar/N sits at the panel bottom, Aasi Nagar/S at the top, while
+    E-W stays correct → vertical mirror, not a rotation). Verified three
+    ways: extracted linework matches the PDF's own raster rendering 99.2%
+    as-is (so pymupdf reports author space faithfully), page.rotation == 0,
+    and a det=-1 fit of the outline to the AOI scores IoU 0.927 at 0° vs
+    0.847 for the best rotation-only fit. Mirroring at ingest — segments
+    AND labels, same frame midline — keeps them mutually consistent and
+    fixes every downstream use; no downstream flip would survive a new pull.
+    """
+    return frame.y0 + frame.y1 - y
+
+
 def extract_segments(frame: pymupdf.Rect) -> list[tuple[float, float, float, float]]:
-    """Gray boundary strokes inside `frame` -> (x1, y1, x2, y2) segments."""
+    """Gray boundary strokes inside `frame` -> (x1, y1, x2, y2) segments.
+
+    Returned in MAP SPACE (y-up) — see _to_map_space for why the mirror is
+    applied here and not downstream.
+    """
     doc = pymupdf.open(PDF_PATH)
     page = doc[0]
     segs: list[tuple[float, float, float, float]] = []
@@ -74,7 +100,8 @@ def extract_segments(frame: pymupdf.Rect) -> list[tuple[float, float, float, flo
         for item in d["items"]:
             if item[0] == "l":
                 p1, p2 = item[1], item[2]
-                segs.append((p1.x, p1.y, p2.x, p2.y))
+                segs.append((p1.x, _to_map_space(frame, p1.y),
+                             p2.x, _to_map_space(frame, p2.y)))
     return segs
 
 
@@ -83,7 +110,11 @@ def extract_numeric_labels(frame: pymupdf.Rect,
     """Numeric text labels near `frame` -> {number: (x, y) anchor}.
 
     A small margin catches edge labels whose bbox sits just outside the
-    boundary frame (ward numbers hug the border on the original map)."""
+    boundary frame (ward numbers hug the border on the original map).
+
+    Anchors are returned in MAP SPACE (y-up), matching extract_segments —
+    the mirror must hit text and geometry alike or label→face assignment
+    would pair each number with its mirrored twin's polygon."""
     doc = pymupdf.open(PDF_PATH)
     page = doc[0]
     labels: dict[int, tuple[float, float]] = {}
@@ -94,7 +125,7 @@ def extract_numeric_labels(frame: pymupdf.Rect,
                 and frame.y0 - margin <= cy <= frame.y1 + margin):
             continue
         if text.isdigit():
-            labels.setdefault(int(text), (cx, cy))
+            labels.setdefault(int(text), (cx, _to_map_space(frame, cy)))
     return labels
 
 
@@ -377,10 +408,10 @@ def main() -> None:
               "source_limit": "2005 NMC city limit (MRSAC CIS-2005 sheet)",
               "rms_m": round(rms),
               "iou": round(fit_iou, 3),
-              "note": "2005 vs current city-boundary mismatch concentrates "
-                      "~100-300 m uncertainty in peripheral wards; interior "
-                      "ward centroids are unaffected. Accepted for zonal "
-                      "LST analysis 2026-09-24 (see PLAN.md).",
+              "note": "Residual RMS (~170 m) reflects 2005 NMC vs current "
+                      "OSM boundary drift; fine for ward-mean LST on 30 m "
+                      "pixels. Source was mirrored at ingest (see "
+                      "_to_map_space); fixed 2026-09-24 (see PLAN.md).",
           },
           "features": feats}
     OUT_PATH.write_text(json.dumps(fc))

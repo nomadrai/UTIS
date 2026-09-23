@@ -26,6 +26,104 @@
 
 ---
 
+## 2026-09-24 (session 6) — BUGFIX: ward layer was N-S mirrored (root cause found + fixed)
+
+### Done
+- User reported ward choropleth vs LST tiles vertically mirrored. Full
+  diagnosis per user checklist: same CRS (both EPSG:4326, no reprojection
+  needed); no local raster affine to be wrong (tiles are GEE XYZ, north-up);
+  GeoJSON lon/lat order correct; extraction code faithful (linework matches
+  the PDF's own raster rendering 99.2% as-is, 7.4% flipped); page.rotation=0.
+- **Root cause: the source PDF's map content is vertically mirrored** —
+  the 2005 authoring wrote the map block with an inverted y-axis (zone
+  labels: Laxmi Nagar/N at panel bottom, Aasi Nagar/S at top, E-W correct
+  → vertical mirror, not rotation). Proved numerically: det=−1 fit of the
+  outline to the AOI scores IoU 0.927 at 0° vs 0.847 for the best det=+1
+  rotation fit. The session-4 "2005 boundary drift" explanation for the
+  1.2 km RMS was WRONG — it was the mirror.
+- Fix at the root, per user directive: `_to_map_space()` in
+  wards_from_pdf.py mirrors segments AND label anchors at ingest (frame
+  midline), keeping label→face assignment consistent. No downstream flip.
+- Re-extracted: rot 10.5°→**0.5°**, IoU 0.723→**0.957**, RMS 1122 m→
+  **166 m**, wards outside AOI 16.4%→**2.2%**. 114 wards, 107 numbered
+  (labels+geometry flipped together, 1:1 preserved), 13 null.
+- Zonal stats recomputed for 2020–2024 (--refresh): city means ~unchanged
+  (mirror-invariant), per-ward values/hotspot ranks moved to true locations.
+- New QA tool `backend/etl/analysis/ward_lst_overlay.py` (`python -m ...`):
+  ward boundaries drawn over the GEE LST composite thumbnail →
+  data/processed/ward_lst_overlay.png. Numeric confirmation: LST sampled
+  under each corrected polygon vs assigned ward mean r=**0.840** (median
+  offset 0.1 K); hottest sets agree {15,17,14,16,2} vs {15,14,17,16,31}.
+- App re-verified headless: Ready, 117 paths, 0 JS errors, mean 40.6 °C.
+
+### Key decisions & why
+- **Fix at ingest, never downstream** (user directive): a flip in map.js
+  or the stats would break on the next data pull; the mirror is a property
+  of THIS source PDF, so it is corrected where that PDF is read, with the
+  full evidence chain in the docstring.
+- **Overlay PNG is now a standing QA gate**: run it after ANY future change
+  to ward extraction, AOI, or compositing — registration bugs are invisible
+  in numeric summaries (a mirrored city averages the same) but obvious
+  against satellite heat.
+
+### Working / Broken
+- ✅ Working: correctly-registered ward layer + LST tiles + choropleth;
+  stats cache refreshed; overlay QA reproducible.
+- ❌ Broken / blocked: nothing new; scenario/hotspots endpoints still await
+  tasks #4–6.
+
+### Next steps (for next session)
+- [ ] Task #4: S2 NDVI/NDBI composites (unlock remaining toggles).
+- [ ] Tasks #5–#6: persistent hotspots + scenario fit + sliders UI.
+
+## 2026-09-24 (session 5) — Task #8: frontend map wired (tiles + choropleth + year selector)
+
+### Done
+- `backend/app/api/wards.py` (new): GET /api/wards serves the 114-ward
+  FeatureCollection for the choropleth; registered in main.py.
+- `main.py`: CORS for localhost/file:// origins + StaticFiles mount of
+  frontend/ (html=True) — one origin serves both app and API. Mount MUST
+  come after all API routes: placed mid-file it shadowed /api/health.
+- `api.js` implemented: fetchLayers/fetchComparison/fetchWards with error
+  propagation; API_BASE is same-origin (""), falls back to localhost:8000
+  under file://.
+- `map.js` implemented: locked view (maxBounds viscosity 1.0, minZoom 11,
+  fitBounds from /api/layers bbox), OSM basemap, GEE LST tile overlay
+  (0.8 opacity), ward choropleth colored by within-year hotspot
+  percentile, hover tooltips (K + °C + p95 + percentile), legend control,
+  year setter, layer-visibility setters, graceful "backend unreachable"
+  panel.
+- `ui.js` implemented: year selector, two layer toggles, status line
+  (uhi:status events), city summary panel (mean °C / hottest p95 / wards).
+- `index.html`: real controls replace placeholders + legend/error/status
+  styling.
+- Verified in headless Chrome: status "Ready", 117 ward paths rendered,
+  20 GEE tile requests, legend + city summary populated (2024 city mean
+  40.6 °C), zero JS console errors.
+
+### Key decisions & why
+- **Same-origin serving** (API mounts the frontend): no CORS in the normal
+  case, one command to run; CORS retained for file:// / separate dev server.
+- **Choropleth color = hotspot percentile, not raw K**: matches the locked
+  methodology (percentile ranks, never fixed cutoffs); raw K lives in the
+  tooltip + satellite tint.
+- **null ward_no join**: GEE sentinel −1 → JSON null → client joins the
+  i-th null feature to the i-th null stat (stable order, both sides sorted).
+
+### Working / Broken
+- ✅ Working: full visual loop — year select → /api/layers tile swap +
+  /api/comparison choropleth restyle; toggles; legend; tooltips.
+- ❌ Broken / blocked: scenario sliders (needs task #6); NDVI/NDBI toggles
+  (needs task #4); headless-Chrome checks are flaky across separate shell
+  invocations (background procs reaped) — verified same-command.
+
+### Next steps (for next session)
+- [ ] Task #4: S2 NDVI/NDBI composites → unlock layers + toggles.
+- [ ] Tasks #5–#6: hotspots + scenario fit → /api/hotspots, /api/scenario,
+      scenario sliders UI.
+- [ ] Optional: fetch /api/wards + comparison once, join server-side in a
+      single payload to cut a round trip.
+
 ## 2026-09-24 (session 4) — Ward polygons from PDF + zonal stats + live comparison/layers API
 
 ### Done
@@ -255,6 +353,6 @@
 | 4 | NDVI / NDBI + WorldCover | todo | S2 SR 10 m; SCL mask; same polygon + season rule |
 | 5 | Multi-year comparison + persistent hotspots | todo | Top-percentile-across-most-years |
 | 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | todo | Explainable coefficients; no black box |
-| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers+comparison live 2026-09-24; hotspots/scenario/gee-status wait on #4–6 |
-| 8 | Frontend wiring | todo | Locked view, layer control, year selector, sliders + explanation panel |
+| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers+comparison+wards live 2026-09-24; hotspots/scenario/gee-status wait on #4–6 |
+| 8 | Frontend wiring | doing | map+choropleth+year selector live 2026-09-24; scenario panel waits on #6 |
 | 9 | Docs: methodology write-up | todo | Compositing, masking, regression fit, caveats |
