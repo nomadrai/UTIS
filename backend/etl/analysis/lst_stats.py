@@ -1,13 +1,16 @@
-"""Analysis: LST statistics from pulled Landsat scenes.
+"""Analysis: LST / NDVI / NDBI multi-year statistics.
 
-Planned responsibilities (see PLAN.md tasks #3–#6):
-    - zonal (ward-level) LST means/percentiles per period
-    - multi-year delta computation
-    - persistent-hotspot ranking (percentile-based thresholds)
+Responsibilities (see PLAN.md task #5):
+    - per-year, per-zone (and city-wide) summary stats for each layer
+      (mean/percentiles), computed server-side via reduceRegion and cached
+      to data/processed as small JSON — this is what the comparison endpoint
+      returns for the change-over-time view
+    - multi-year delta rasters/summaries between selected year pairs
 """
 
 from __future__ import annotations
 
 
-def compute_lst_stats(*args, **kwargs):
-    raise NotImplementedError("LST stats land with PLAN.md tasks #3–#6")
+def yearly_stats(yearly_images: dict, zones=None) -> dict:
+    """{layer: {year: {zone: stats}}} small JSON summaries (server-side)."""
+    raise NotImplementedError("Yearly stats lands with PLAN.md task #5")

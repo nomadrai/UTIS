@@ -52,11 +52,22 @@ Nagpur is a useful and under-studied UHI case study:
 
 ## 2. Scope
 
+> **AOI policy (hard rule, agreed 2026-09-23):** every GEE query and every map
+> render is scoped to the static Nagpur **city polygon** at
+> `backend/config/aoi/nagpur_city.geojson` (OSM relation 10330977 = Nagpur
+> Urban Taluka, i.e. the city extent — the wider rural district is excluded).
+> All imagery filtering applies `.filterBounds(aoi)` + `.clip(aoi)` with this
+> exact polygon via `backend/etl/gee_common.py` — **never a bounding-box
+> approximation**, which would pull in surrounding rural areas and skew the
+> analysis. Server-side compute only: we pull small numeric summaries
+> (`reduceRegion`) or tile URLs (`getMapId`), never raw imagery.
+
 ### WILL do
 
-- **LST mapping** from Landsat 8/9 thermal bands (single-channel algorithm,
-  with the standard atmospheric/emi­ssivity corrections available in GEE) for
-  selectable time windows and seasons.
+- **LST mapping** from Landsat 8/9 Collection 2 Level-2 `ST_B10` — the
+  pre-computed, atmospherically corrected surface-temperature band (no
+  derivation from raw thermal radiance) — composited by **seasonal median**
+  so no year is compared against a different season's weather.
 - **Land-cover analysis** via spectral indices:
   - **NDVI** (vegetation density) from Landsat 8/9 and Sentinel-2,
   - **NDBI** (built-up index) from the same imagery,
@@ -95,9 +106,9 @@ Nagpur is a useful and under-studied UHI case study:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Data + compute | **Google Earth Engine (Python API)** | Decades of Landsat/Sentinel archives, cloud-side processing — no local imagery downloads, no raster GPU math on this machine. GEE composites, cloud-masking, and index math run server-side; we pull only finished stats/rasters. |
+| Data + compute | **Google Earth Engine (Python API)** | Decades of Landsat/Sentinel archives, cloud-side processing — no local imagery downloads, no raster GPU math on this machine. GEE composites, cloud-masking, and index math run server-side; we pull only small numeric summaries (reduceRegion) and map tile URLs (getMapId). |
 | Backend | **Python + FastAPI** | Same language as the GEE/analysis stack (no context switching between services); async endpoints fit the "fire GEE job → poll → serve result" pattern well; Pydantic gives request/response validation for free. FastAPI also auto-documents the API (Swagger UI), which keeps frontend/backend contract honest. |
-| Frontend map | **Leaflet** | Lean, dependency-free, ubiquitous, excellent raster-overlay support for GEE-hosted tiles. |
+| Frontend map | **Leaflet** | Lean, dependency-free, ubiquitous, excellent raster-overlay support for GEE-hosted tiles. Initial view locked/bounded to the Nagpur polygon extent (maxBounds); GEE tile overlays + year selector + scenario sliders. |
 | Map basemap tiles | **OpenStreetMap** default (optional Mapbox token) | OSM costs nothing and works offline of any API key. Mapbox GL vector basemaps remain an optional upgrade — Leaflet consumes both. Keeping Leaflet (rather than Mapbox GL JS) as the base avoids vendor lock-in for a research tool. |
 | Land-cover reference | **ESA WorldCover** (via GEE catalog) | 10 m global land cover, available in the GEE public catalog, no extra pipeline. Bhuvan (ISRO) LULC products kept as an India-specific cross-check/alternative. |
 | Charts | **Chart.js** (if/when needed) | Small, no build step, enough for time-series comparisons. |
@@ -112,20 +123,20 @@ React/Vue build tooling (a static Leaflet app keeps the project navigable).
 
 | Dataset | GEE ID | Use |
 |---|---|---|
-| Landsat 8 OLI/TIRS | `LANDSAT/LC08/C02/T1_L2` | Primary LST source (TIRS thermal bands), 30 m optical / 100 m thermal, 2013–present. Collection 2 Level-2 (surface reflectance + surface temperature ready). |
+| Landsat 8 OLI/TIRS | `LANDSAT/LC08/C02/T1_L2` | Primary LST source via `ST_B10` (pre-computed surface temperature), 30 m optical / 100 m thermal, 2013–present. Collection 2 Level-2. |
 | Landsat 9 OLI-2/TIRS-2 | `LANDSAT/LC09/C02/T1_L2` | Extends LST continuity from 2021 onward; merged with L8 for denser time series. |
 | Sentinel-2 MSI | `COPERNICUS/S2_SR_HARMONIZED` | 10 m NDVI/NDBI at higher spatial detail; **no thermal band**, so LST comes from Landsat only, S2 supplements land-cover mapping. |
 | ESA WorldCover 10 m | `ESA/WorldCover/v200` (2021) | Land-cover reference/validation for built-up vs vegetation classes. |
 | Bhuvan LULC (ISRO) | manual download (not in GEE) | Optional India-specific land-cover cross-check. |
-| AOI boundary | Nagpur municipal boundary | To be pinned down (GADM / OSM admin polygon / digitized). Tracked in PLAN.md. |
+| AOI boundary | OSM relation 10330977 (Nagpur Urban Taluka) | City-extent polygon stored at `backend/config/aoi/nagpur_city.geojson` (384-vertex MultiPolygon, ODbL licensed). OSM gave cleaner city geometry than GADM admin levels; static reference — re-fetch only with a dated PLAN.md entry. |
 
 **Primary constraints we design around:**
 
 - Landsat revisit is 16 days per satellite (~8 days combined L8+L9) and monsoon
   cloud cover in Nagpur (Jun–Sep) seriously thins usable scenes — analysis
   windows use seasonal composites rather than single dates.
-- LST retrievals need emissivity correction (normally from NDVI-based
-  classification or ASTER emissivity) — methodology decision tracked in
-  PLAN.md.
+- `ST_B10` is already atmospherically corrected (emissivity correction
+  included) — no custom single-channel retrieval needed; convert DN to
+  Kelvin with the C2 L2 factor (DN × 0.00341802 + 149.0).
 - GEE free (noncommercial) tier has concurrency/limits — batch jobs rather
   than on-the-fly heavy computation where possible.

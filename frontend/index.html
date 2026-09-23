@@ -20,16 +20,33 @@
     }
     #map { flex: 1; }
     .placeholder { color: #9ab; font-size: 0.9rem; line-height: 1.5; }
+    .ctrl { margin-bottom: 20px; }
+    .ctrl h3 { margin: 0 0 8px; font-size: 0.95rem; color: #fff; }
   </style>
 </head>
 <body>
   <div id="layout">
     <div id="sidebar">
       <h1>UHI Nagpur</h1>
-      <p class="placeholder">
-        Controls (year switcher, hotspot overlay, scenario sliders) will be
-        wired up in a later session — see PLAN.md tasks #9–#10.
-      </p>
+
+      <div class="ctrl">
+        <h3>Layers</h3>
+        <p class="placeholder">LST heatmap / NDVI / NDBI / hotspot markers —
+        toggles wired in task #8.</p>
+      </div>
+
+      <div class="ctrl">
+        <h3>Year</h3>
+        <p class="placeholder">Year selector for multi-temporal comparison —
+        wired in task #8.</p>
+      </div>
+
+      <div class="ctrl">
+        <h3>Scenario</h3>
+        <p class="placeholder">Sliders: hypothetical vegetation / built-up
+        change per zone; results panel explains the estimated LST impact
+        (wired in task #8).</p>
+      </div>
     </div>
     <div id="map"></div>
   </div>
@@ -38,6 +55,6 @@
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
-  <script src="src/js/map.js"></script>
+  <script type="module" src="src/js/map.js"></script>
 </body>
 </html>

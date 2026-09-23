@@ -66,9 +66,10 @@ frontend/index.html
 ├── backend/
 │   ├── app/                # API layer (FastAPI) — routes, services
 │   ├── etl/
-│   │   ├── gee_pulls/      # GEE data-pull scripts (Landsat/Sentinel)
-│   │   └── analysis/       # LST, NDVI/NDBI, hotspot, scenario logic
-│   └── config/             # Settings (AOI bounds, env, paths)
+│   │   ├── gee_common.py   # Shared GEE helpers — AOI clip policy lives HERE
+│   │   ├── gee_pulls/      # GEE data-pull scripts (Landsat/Sentinel/WorldCover)
+│   │   └── analysis/       # LST/NDVI/NDBI stats, hotspots, scenario logic
+│   └── config/             # Static AOI polygon (nagpur_city.geojson), settings
 ├── frontend/               # Static Leaflet web app (index.html, src/)
 ├── data/
 │   ├── raw/                # As-pulled GEE exports (GeoTIFF, JSON)
