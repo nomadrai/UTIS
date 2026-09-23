@@ -33,7 +33,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW_DIR = REPO_ROOT / os.getenv("DATA_RAW_DIR", "data/raw")
 DATA_PROCESSED_DIR = REPO_ROOT / os.getenv("DATA_PROCESSED_DIR", "data/processed")
 
-AOI_GEOJSON_PATH = Path(__file__).resolve().parent / "aoi" / "nagpur_city.geojson"
+AOI_DIR = Path(__file__).resolve().parent / "aoi"
+AOI_GEOJSON_PATH = AOI_DIR / "nagpur_city.geojson"
 
 # --- AOI: static Nagpur city polygon (OSM relation 10330977) ----------------
 @lru_cache(maxsize=1)

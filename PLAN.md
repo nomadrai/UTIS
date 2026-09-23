@@ -26,6 +26,62 @@
 
 ---
 
+## 2026-09-24 (session 4) — Ward polygons from PDF + zonal stats + live comparison/layers API
+
+### Done
+- Ward boundaries: user supplied the MRSAC CIS-2005 ward-map PDF (pure
+  vector, 40k line segments). Built `backend/etl/wards_from_pdf.py`:
+  boundary-stroke extraction → endpoint snapping → planar face
+  polygonization → label→face assignment → IoU-maximizing similarity fit
+  against the OSM city polygon → UTM→WGS84 →
+  `backend/config/aoi/nagpur_wards.geojson`.
+- 114 ward features: 107 numbered + 13 `ward_no=null` (their numbers are
+  not printed anywhere on the source map). Area sum 206.6 km² vs AOI
+  210.8 km² (98%); georef scale 94.69 m/pt, rot 10.5°, IoU 0.72,
+  boundary RMS ≈ 1.1 km concentrated at the rim.
+- `lst_stats.py` implemented: ward FeatureCollection, single server-side
+  `reduceRegions` (mean + p95, shared inputs, 100 m sampling) per
+  (year, season), within-year percentile hotspot ranks, city summaries,
+  JSON cache at `data/processed/lst_ward_stats_{season}.json`.
+- `pull_landsat_lst.py`: added `--zonal-stats` / `--refresh` CLI; ran for
+  2020–2024 pre-monsoon → all five years cached (city means 313.8–319.1 K,
+  2021 hottest — consistent with the city-wide pulls).
+- `/api/comparison` live: per-ward stats from cache, computes missing
+  years on demand, strict validation (years/layer/season), 503 on GEE
+  failure. `/api/layers` live: real getMapId tile URL + fixed vis params
+  + AOI bbox. Verified end-to-end incl. 400/503 paths.
+
+### Key decisions & why
+- **Georef residual accepted + documented** (user decision): the ~1.2 km
+  RMS is a 2005-NMC vs current-OSM boundary mismatch, not a fit bug —
+  every pipeline check passed (closed linework, area match, single-part
+  AOI, IoU-optimal placement). Interior wards are solid; peripheral wards
+  carry ~100–300 m uncertainty. Embedded a `georef` block in the GeoJSON;
+  fine for ward-mean LST on 30 m pixels.
+- **Unlabeled wards included as `ward_no=null`** (user decision): full
+  city coverage beats 22 holes; ee side uses sentinel −1, API maps back
+  to null.
+- **Hotspot = within-year percentile rank** of ward means, never fixed °C
+  cutoffs (seasonal composites control season, not year-specific weather).
+- **100 m zonal sampling**: ST_B10 is 30 m but ward means (0.5–2 km²
+  zones) are stable at 100 m; ~10x cheaper reductions, bestEffort for
+  tiny wards.
+
+### Working / Broken
+- ✅ Working: GEE auth end-to-end; ward extraction + georef; zonal stats
+  2020–2024 cached; /api/comparison + /api/layers return real data;
+  validation paths return 400s.
+- ❌ Broken / blocked: starlette TestClient needs `httpx` (not installed)
+  — endpoints verified by direct call instead; hotspots/scenario/gee-status
+  endpoints still stubbed (need tasks #4–6).
+
+### Next steps (for next session)
+- [ ] Task #4: S2 NDVI/NDBI composites (same years/season/polygon rule).
+- [ ] Tasks #5–#6: persistent hotspots + scenario fit → unstub
+      /api/hotspots + /api/scenario.
+- [ ] Task #8: frontend wiring — locked view, year selector, ward choropleth
+      from /api/comparison, GEE tiles from /api/layers.
+
 ## 2026-09-23 (session 3) — Task #1 code: GEE init + Landsat LST pull implemented
 
 ### Done
@@ -195,10 +251,10 @@
 |---|---|---|---|
 | 1 | GEE auth + first polygon-scoped data pull | done | sanity check passed 2026-09-23: echo OK, AOI 211 km², 23 scenes |
 | 2 | LST computation, one time period | done | pre-monsoon 2020–2024 composites pulled; means 314–320 K, plausible |
-| 3 | Zonal LST stats via reduceRegion | todo | Small JSON to data/processed; feeds /api/comparison |
+| 3 | Zonal LST stats via reduceRegion | done | 114 wards, mean+p95, 2020–2024 cached; hotspot pct ranks |
 | 4 | NDVI / NDBI + WorldCover | todo | S2 SR 10 m; SCL mask; same polygon + season rule |
 | 5 | Multi-year comparison + persistent hotspots | todo | Top-percentile-across-most-years |
 | 6 | Scenario relationship fit (dLST ~ dNDVI + dNDBI) | todo | Explainable coefficients; no black box |
-| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | todo | Contracts stubbed in backend/app/api/ |
+| 7 | API endpoints live (layers/comparison/hotspots/scenario/gee-status) | doing | layers+comparison live 2026-09-24; hotspots/scenario/gee-status wait on #4–6 |
 | 8 | Frontend wiring | todo | Locked view, layer control, year selector, sliders + explanation panel |
 | 9 | Docs: methodology write-up | todo | Compositing, masking, regression fit, caveats |

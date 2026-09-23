@@ -171,12 +171,37 @@ def main() -> None:
         action="store_true",
         help="verify GEE auth + polygon scoping with tiny server-side queries",
     )
+    parser.add_argument(
+        "--zonal-stats",
+        action="store_true",
+        help="per-ward zonal LST stats for --years, cached to data/processed "
+             "(feeds /api/comparison)",
+    )
+    parser.add_argument(
+        "--refresh", action="store_true",
+        help="recompute years already present in the zonal-stats cache",
+    )
     args = parser.parse_args()
 
     if args.sanity_check:
         import json
 
         print(json.dumps(sanity_check(), indent=2))
+        return
+
+    if args.zonal_stats:
+        if not args.years:
+            parser.error("--zonal-stats needs --years")
+        from backend.etl.analysis import lst_stats
+
+        payload = lst_stats.compute_yearly_stats(
+            args.years, args.season, refresh=args.refresh
+        )
+        import json
+
+        print(json.dumps(
+            {y: payload["years"][y]["city"] for y in sorted(payload["years"])},
+            indent=2))
         return
 
     if not args.years:
