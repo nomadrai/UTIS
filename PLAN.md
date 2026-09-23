@@ -26,6 +26,57 @@
 
 ---
 
+## 2026-09-23 (session 3) — Task #1 code: GEE init + Landsat LST pull implemented
+
+### Done
+- venv created + requirements installed; `backend/.env` holds GEE_PROJECT_ID
+  (user-provided); added `backend/.env.example` (README referenced it but it
+  didn't exist).
+- `settings.py`: added `GEE_PROJECT_ID` (from env, stripped).
+- `gee_common.py` fully implemented: `get_ee()` (init bound to project,
+  cached once per process), `aoi_geometry`/`aoi_feature`,
+  `scope_to_nagpur` (filterBounds+clip in ONE place — AOI policy intact),
+  `clip_to_nagpur`, `reduce_over_zones` (mean reduceRegion), `to_tile_url`
+  (getMapId), plus small AOI/JSON helpers.
+- `pull_landsat_lst.py` fully implemented: merged L8/L9 collection, per-year
+  season windows (winter wraps the calendar year: Dec→Feb), QA_PIXEL cloud
+  mask (dilated cloud/cloud/shadow/snow bits), ST_B10 DN→Kelvin scaling,
+  per-year seasonal median composite, reduceRegion stats, CLI with
+  `--years/--season/--sanity-check/--print-composites`.
+- Verified: imports, season-date windows, scale math, CLI help. The
+  sanity-check fails fast with the exact "earthengine authenticate" hint
+  until credentials exist — correct behavior, confirmed.
+
+### Key decisions & why
+- `get_ee()` defers `import ee` and caches init — non-GEE code paths don't
+  pay the import, exactly one Initialize per process.
+- Fixed LST vis range 290–325 K (palette blue→red) so year-to-year renders
+  are visually comparable — per-year auto-scaling would lie.
+- Sanity check = 3 cheap server-side probes: constant echo through GEE
+  compute, AOI area plausibility (Nagpur city ≈ 50–1000 km² band), 2024
+  pre-monsoon L8/L9 scene count over the polygon.
+
+- GEE auth completed by user (`earthengine authenticate`); sanity check
+  passed: echo OK, AOI area 211.36 km² (plausible for Urban Taluka), 23
+  L8/L9 scenes over the polygon in pre-monsoon 2024.
+- **First real LST pull (task #2)**: pre-monsoon median composites,
+  city-wide mean LST: 2020: 317.5 K (44.4 °C), 2021: 319.7 K (46.5 °C),
+  2022: 315.4 K (42.2 °C), 2023: 314.3 K (41.2 °C), 2024: 314.4 K (41.3 °C)
+  — plausible pre-monsoon daytime surface temps for Nagpur.
+
+### Working / Broken
+- ✅ Working: GEE auth end-to-end, polygon-scoped queries, cloud-masked
+  composites, ST_B10 scaling, reduceRegion stats, CLI.
+- ❌ Not yet: per-ward zonal stats (#3), S2 indices (#4), hotspots (#5),
+  scenario fit (#6), live API (#7), frontend (#8).
+
+### Next steps (for next session)
+- [ ] Tasks #3/#7: zonal stats (per-ward) + wire API endpoints to real data.
+- [ ] Task #4: S2 NDVI/NDBI composites, same years/season.
+- [ ] Then #5–#6, #8, and cache composites for the /api/layers tile URLs.
+
+---
+
 ## 2026-09-23 (session 2) — Architecture locked: AOI polygon + server-side-only GEE
 
 ### Done
@@ -142,8 +193,8 @@
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 1 | GEE auth + first polygon-scoped data pull | todo | ee.Initialize(project=...); implement gee_common.py |
-| 2 | LST computation, one time period | todo | L8/L9 ST_B10, seasonal median, clip to nagpur_city.geojson |
+| 1 | GEE auth + first polygon-scoped data pull | done | sanity check passed 2026-09-23: echo OK, AOI 211 km², 23 scenes |
+| 2 | LST computation, one time period | done | pre-monsoon 2020–2024 composites pulled; means 314–320 K, plausible |
 | 3 | Zonal LST stats via reduceRegion | todo | Small JSON to data/processed; feeds /api/comparison |
 | 4 | NDVI / NDBI + WorldCover | todo | S2 SR 10 m; SCL mask; same polygon + season rule |
 | 5 | Multi-year comparison + persistent hotspots | todo | Top-percentile-across-most-years |

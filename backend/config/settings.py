@@ -24,6 +24,10 @@ try:  # optional dependency; env vars still work without it
 except ImportError:  # pragma: no cover
     pass
 
+# --- GEE auth ----------------------------------------------------------------
+# Google Earth Engine Cloud project ID (set in backend/.env — see README.md).
+GEE_PROJECT_ID: str = os.getenv("GEE_PROJECT_ID", "").strip()
+
 # --- Paths -----------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW_DIR = REPO_ROOT / os.getenv("DATA_RAW_DIR", "data/raw")
