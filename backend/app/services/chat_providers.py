@@ -97,12 +97,16 @@ class _Fatal(Exception):
 
 def _post(provider: dict, body: dict) -> dict:
     url = f"{provider['base_url'].rstrip('/')}/chat/completions"
+    # A real User-Agent is REQUIRED: Groq's Cloudflare edge returns
+    # "HTTP 403: error code 1010" (browser-signature ban) to Python's
+    # default "Python-urllib/x.y" UA (found live 2026-09-24).
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {provider['api_key']}",
+            "User-Agent": "uhi-nagpur/0.2 (Freebuff project; python-urllib)",
         },
         method="POST",
     )

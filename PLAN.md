@@ -601,6 +601,38 @@
 
 ## 2026-09-23 (session 1) — Project scaffolding
 
+## 2026-09-24 (session 13) — What-if map tuning + legend move + live chat fix
+
+### Done
+- Legend moved bottom-right → **top-right** (chat FAB/drawer covered it);
+  collision verified in-browser (pixel-box overlap check, open drawer too).
+- **What-if palette tuned after measuring, not guessing**
+  (`scripts/tune_whatif.py` — CDP-driven live-browser experiment): a linear
+  ±1.5 K scale made vegetation-only scenarios INVISIBLE (fitted NDVI term
+  yields ≈−0.16 K max → 101/101 wards identical yellow) and clamped ~70%
+  of wards at the ramp ends for built-up scenarios. Fix in map.js:
+  continuous RGB interpolation between the 5 anchors + perceptual (√)
+  normalizer; legend discloses the nonlinear scale. Result: veg +20% now
+  visibly tints (4 wards), 5-color spatial pattern at high sliders,
+  map-vs-model agreement r=0.991.
+- **Live chat fixed**: Groq's Cloudflare edge returns "error 1010" (403) to
+  Python's default User-Agent; _post() now sends a real UA. Live round-trip
+  verified: tools get_hotspots + run_scenario called, correct grounded
+  answer (ward 15, −0.56 °C for +20% veg).
+- Smoke suite: 47 checks all green (live-branch chat checks now fire since
+  GROQ_API_KEY is set in backend/.env).
+
+### Key decisions & why
+- Tuning experiments encode the right requirements: visibility + direction
+  for small effects; monotone near-linear map-vs-model tracking
+  (r≥0.95) instead of raw slope (perceptual compression is by design and
+  disclosed in the legend); no ordering assertion between two saturated
+  maps.
+
+---
+
+## 2026-09-23 (session 1) — Project scaffolding
+
 ### Next steps (for next session)
 - [ ] Task #1 — GEE auth end-to-end (noncommercial Cloud project,
       `earthengine authenticate`, `GEE_PROJECT_ID` in backend/.env), then

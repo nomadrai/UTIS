@@ -191,6 +191,11 @@
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
+  <script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script>
+    // Debug hooks for automated inspection (headless smoke tests). Harmless
+    // in normal use; not a public API.
+    window.__uhi_debug = { get map() { return window.__uhi_map_ref; } };
+  </script>
   <script type="module" src="src/js/map.js"></script>
-</body>
 </html>

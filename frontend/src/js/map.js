@@ -48,8 +48,23 @@ let scenarioModel = null;  // {coef, ward_baselines, thresholds, ...} — what-i
 // What-if mode state (task #10): map recolors by predicted per-ward dLST.
 const whatIf = { active: false, vegPct: 0, builtPct: 0 };
 
-// Diverging palette for intervention effect (cooler → hotter), K.
-const WHATIF_RAMP = ["#1a9850", "#91cf60", "#ffffbf", "#fc8d59", "#d73027"];
+// Diverging palette for intervention effect (cooler → hotter).
+// TUNED 2026-09-24 after measuring slider sweeps in the live browser
+// (scripts/tune_whatif.py): a LINEAR ±1.5 K scale made vegetation-only
+// scenarios invisible (the fitted NDVI term yields ≈ −0.16 K max — a
+// quarter of one color band, 101/101 wards stayed identical yellow) while
+// built-up scenarios clamped 70% of wards at the ramp ends. Fix: continuous
+// interpolation between the 5 anchor colors + a PERCEPTUAL (√) normalizer
+// that expands small differences and compresses large ones. The legend
+// discloses the nonlinear mapping so the color reading stays honest.
+const WHATIF_STOPS = [
+  { t: -1.0, c: [26, 152, 80] },   // #1a9850 strong cooling
+  { t: -0.5, c: [145, 207, 96] },  // #91cf60
+  { t: 0.0, c: [255, 255, 191] },  // #ffffbf neutral (no-change)
+  { t: 0.5, c: [252, 141, 89] },   // #fc8d59
+  { t: 1.0, c: [215, 48, 39] },    // #d73027 strong warming
+];
+const WHATIF_SCALE_K = 1.5; // |effect| ≥ 1.5 K saturates the ramp
 
 function whatIfEffect(wardNo) {
   // Intervention effect vs no-action (K): intercept excluded — semantics
@@ -64,12 +79,20 @@ function whatIfEffect(wardNo) {
 
 function whatIfColor(effectK) {
   if (effectK == null) return "#888";
-  // Scale: ±1.5 K spans the ramp's full width (typical slider effects are
-  // sub-1K; the extreme threshold is ±5 K). t ∈ [−1, 1] maps linearly over
-  // the whole ramp — green at −1, yellow at 0, red at +1.
-  const t = Math.max(-1, Math.min(1, effectK / 1.5));
-  const idx = Math.round((1 + t) * (WHATIF_RAMP.length - 1) / 2);
-  return WHATIF_RAMP[Math.max(0, Math.min(WHATIF_RAMP.length - 1, idx))];
+  const x = Math.max(-1, Math.min(1, effectK / WHATIF_SCALE_K));
+  // Perceptual expansion: ±0.07 K already tints, ≥1.5 K saturates.
+  const t = Math.sign(x) * Math.sqrt(Math.abs(x));
+  let lo = WHATIF_STOPS[0], hi = WHATIF_STOPS[WHATIF_STOPS.length - 1];
+  for (let i = 0; i < WHATIF_STOPS.length - 1; i++) {
+    if (t >= WHATIF_STOPS[i].t && t <= WHATIF_STOPS[i + 1].t) {
+      lo = WHATIF_STOPS[i];
+      hi = WHATIF_STOPS[i + 1];
+      break;
+    }
+  }
+  const f = hi.t === lo.t ? 0 : (t - lo.t) / (hi.t - lo.t);
+  const c = lo.c.map((v, i) => Math.round(v + f * (hi.c[i] - v)));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 function status(message, kind = "info") {
@@ -264,13 +287,14 @@ function updateLegend() {
         div.innerHTML =
           `<b>What-if — predicted effect vs no-action</b>` +
           `<div class="uhi-legend-row">` +
-          WHATIF_RAMP.map((c) => `<span class="uhi-legend-swatch" style="background:${c}"></span>`).join("") +
+          WHATIF_STOPS.map((s) => `<span class="uhi-legend-swatch" style="background:rgb(${s.c.join(",")})"></span>`).join("") +
           `</div>` +
           `<div class="uhi-legend-labels"><span>−1.5 K (cooler)</span><span>+1.5 K (hotter)</span></div>` +
           `<div class="uhi-legend-note">scenario: ${whatIf.vegPct > 0 ? "+" : ""}${whatIf.vegPct}% vegetation, ` +
           `${whatIf.builtPct > 0 ? "+" : ""}${whatIf.builtPct}% built-up<br>` +
           `${scenarioModel?.equation ?? ""}<br>` +
-          `<i>intercept excluded (effect vs today); fit r²=${scenarioModel?.r2?.toFixed(2) ?? "—"}, n=${scenarioModel?.n ?? "—"}</i></div>`;
+          `<i>intercept excluded (effect vs today); fit r²=${scenarioModel?.r2?.toFixed(2) ?? "—"}, n=${scenarioModel?.n ?? "—"}</i><br>` +
+          `<i>color scale is nonlinear (perceptual) to make small effects visible</i></div>`;
       } else if (state.layer === "landcover" && landcoverStats) {
         // Categorical legend: one swatch row per WorldCover class.
         div.innerHTML =
@@ -499,6 +523,9 @@ export async function initMap() {
   });
 
   status("Ready");
+
+  // Debug handle for headless tests (harmless in normal use; not an API).
+  window.__uhi_map_ref = map;
 }
 
 initMap();
