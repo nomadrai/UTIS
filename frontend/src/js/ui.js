@@ -9,16 +9,17 @@
  *   - Layer toggles: satellite tiles + ward choropleth.
  *   - Status line: async load progress / errors surfaced to the user.
  *
- * Scenario panel lands with PLAN.md tasks #6/#8 (endpoint not live yet).
+ * Scenario panel (task #6) + what-if map mode (task #10).
  */
 
-import { fetchComparison, fetchWards, postScenario, LAYER_SPECS, yearsForLayer } from "./api.js";
+import { fetchComparison, fetchWards, postScenario, postChat, LAYER_SPECS, yearsForLayer } from "./api.js";
 
 /**
- * @param {object} mapApi { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible, setHotspotsVisible, getSelectedWard }
+ * @param {object} mapApi { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible,
+ *   setHotspotsVisible, getSelectedWard, enableWhatIf, setWhatIfDeltas }
  */
 export function initUI(mapApi) {
-  const { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible, setHotspotsVisible, getSelectedWard } = mapApi;
+  const { getState, setYear, setLayer, setTilesVisible, setChoroplethVisible, setHotspotsVisible, getSelectedWard, enableWhatIf, setWhatIfDeltas } = mapApi;
   const { layer, years, year: currentYear } = getState();
 
   // --- status line -----------------------------------------------------------
@@ -178,9 +179,111 @@ export function initUI(mapApi) {
   }
 
   zoneSel.addEventListener("change", runEstimate);
-  vegSlider.addEventListener("input", scheduleEstimate);
-  builtSlider.addEventListener("input", scheduleEstimate);
+  vegSlider.addEventListener("input", () => {
+    scheduleEstimate();
+    if (typeof setWhatIfDeltas === "function") setWhatIfDeltas(Number(vegSlider.value), Number(builtSlider.value));
+  });
+  builtSlider.addEventListener("input", () => {
+    scheduleEstimate();
+    if (typeof setWhatIfDeltas === "function") setWhatIfDeltas(Number(vegSlider.value), Number(builtSlider.value));
+  });
   updateSliderLabels();
   // First estimate once the ward list lands (zone defaults to city-wide).
   fetchWards().then(runEstimate).catch(() => {});
+
+  // --- what-if map mode (task #10) ----------------------------------------------
+  // The SAME sliders drive both the panel estimate and the map recolor: one
+  // source of truth for the scenario, two synchronized views of it.
+  const whatIfChk = document.getElementById("toggle-whatif");
+  if (whatIfChk) {
+    whatIfChk.addEventListener("change", () => {
+      if (typeof enableWhatIf === "function") {
+        enableWhatIf(whatIfChk.checked).catch((err) => {
+          statusEl.textContent = `What-if unavailable: ${err.message}`;
+          statusEl.dataset.kind = "error";
+          whatIfChk.checked = false;
+        });
+      }
+    });
+  }
+
+  initChat();
+
+  // --- AI chat drawer (task #11) ----------------------------------------------
+  // The bot is grounded server-side (system prompt = methodology digest;
+  // tools = this app's own analysis functions). Here we only render turns,
+  // keep the visible history, and surface errors as chat bubbles.
+  function initChat() {
+    const drawer = document.getElementById("chat-drawer");
+    const fab = document.getElementById("chat-fab");
+    const closeBtn = document.getElementById("chat-close");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("chat-input");
+    const msgs = document.getElementById("chat-messages");
+    const sendBtn = form?.querySelector("button[type=submit]");
+    if (!drawer || !fab || !form || !input || !msgs) return;
+
+    const history = []; // {role, content} — assistant-visible text only
+
+    const open = () => drawer.classList.add("open");
+    const close = () => drawer.classList.remove("open");
+    fab.addEventListener("click", () => {
+      drawer.classList.toggle("open");
+      if (drawer.classList.contains("open")) input.focus();
+    });
+    closeBtn?.addEventListener("click", close);
+
+    function addBubble(role, text, sources) {
+      const div = document.createElement("div");
+      div.className = `chat-msg ${role}`;
+      div.textContent = text;
+      if (sources?.length) {
+        const src = document.createElement("div");
+        src.className = "chat-src";
+        src.textContent = `via ${[...new Set(sources)].join(", ")}`;
+        div.appendChild(src);
+      }
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+      return div;
+    }
+
+    let busy = false;
+    async function send(text) {
+      const q = (text ?? input.value).trim();
+      if (!q || busy) return;
+      busy = true;
+      if (sendBtn) sendBtn.disabled = true;
+      input.value = "";
+      addBubble("user", q);
+      const thinking = addBubble("assistant", "Thinking… (calling the analysis tools)");
+      try {
+        const r = await postChat(q, history);
+        thinking.querySelector(".chat-src")?.remove();
+        thinking.textContent = r.reply || "(empty reply)";
+        if (r.sources?.length) {
+          const src = document.createElement("div");
+          src.className = "chat-src";
+          src.textContent = `via ${[...new Set(r.sources)].join(", ")}${r.provider ? ` · ${r.provider}` : ""}`;
+          thinking.appendChild(src);
+        }
+        history.push({ role: "user", content: q });
+        history.push({ role: "assistant", content: r.reply || "" });
+        // Cap client history (server re-caps too; this keeps the drawer light).
+        while (history.length > 12) history.splice(0, 2);
+      } catch (err) {
+        thinking.className = "chat-msg error";
+        thinking.textContent = String(err.message || err);
+      } finally {
+        busy = false;
+        if (sendBtn) sendBtn.disabled = false;
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    }
+
+    form.addEventListener("submit", (e) => { e.preventDefault(); send(); });
+    document.querySelectorAll("#chat-suggestions button").forEach((b) => {
+      b.addEventListener("click", () => send(b.dataset.q));
+    });
+  }
 }

@@ -72,3 +72,32 @@ SEASONS = {
     "post-monsoon": {"start_mmdd": "10-01", "end_mmdd": "11-30"},
     "winter": {"start_mmdd": "12-01", "end_mmdd": "02-28"},
 }
+
+# --- AI chat providers (task #11; optional — /api/chat disabled without keys) --
+# OpenAI-compatible fallback chain, tried in order; first provider with a key
+# wins, and on rate-limit/timeout the chain moves on. See .env.example.
+AI_PROVIDERS = [
+    {
+        "name": "groq",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key_env": "GROQ_API_KEY",
+        "model_env": "GROQ_MODEL",
+        "default_model": "llama-3.3-70b-versatile",
+    },
+    {
+        "name": "google-ai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_key_env": "GOOGLE_AI_API_KEY",
+        "model_env": "GOOGLE_AI_MODEL",
+        "default_model": "gemini-2.0-flash",
+    },
+    {
+        "name": "openrouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "model_env": "OPENROUTER_MODEL",
+        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
+    },
+]
+AI_MAX_TOOL_ROUNDS = 4        # max tool-call round-trips per chat request
+AI_REQUEST_TIMEOUT_S = 45.0   # per-provider HTTP timeout

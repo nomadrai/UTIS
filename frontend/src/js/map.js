@@ -12,7 +12,7 @@
  *   - Year selector swaps BOTH the tile layer and the choropleth values.
  */
 
-import { fetchLayers, fetchComparison, fetchWards, fetchHotspots, fetchLandcoverStats, LAYER_SPECS, yearsForLayer } from "./api.js";
+import { fetchLayers, fetchComparison, fetchWards, fetchHotspots, fetchLandcoverStats, fetchScenarioModel, LAYER_SPECS, yearsForLayer } from "./api.js";
 import { initUI } from "./ui.js";
 
 const DEFAULT_SEASON = "pre-monsoon";
@@ -43,6 +43,34 @@ let hotspotLayer = null; // L.layerGroup of persistent-hotspot markers
 let hotspotsData = null; // FeatureCollection from /api/hotspots
 let selectedWard = null; // ward_no clicked in the choropleth (scenario target)
 let landcoverStats = null; // {byWard: Map, colors, classes} — categorical layer
+let scenarioModel = null;  // {coef, ward_baselines, thresholds, ...} — what-if map
+
+// What-if mode state (task #10): map recolors by predicted per-ward dLST.
+const whatIf = { active: false, vegPct: 0, builtPct: 0 };
+
+// Diverging palette for intervention effect (cooler → hotter), K.
+const WHATIF_RAMP = ["#1a9850", "#91cf60", "#ffffbf", "#fc8d59", "#d73027"];
+
+function whatIfEffect(wardNo) {
+  // Intervention effect vs no-action (K): intercept excluded — semantics
+  // published by /api/scenario-model (effect_semantics).
+  if (!scenarioModel) return null;
+  const nb = scenarioModel.ward_baselines.ndvi[wardNo];
+  const bb = scenarioModel.ward_baselines.ndbi[wardNo];
+  if (nb == null || bb == null) return null;
+  const c = scenarioModel.coef;
+  return c.ndvi * (whatIf.vegPct / 100) * nb + c.ndbi * (whatIf.builtPct / 100) * bb;
+}
+
+function whatIfColor(effectK) {
+  if (effectK == null) return "#888";
+  // Scale: ±1.5 K spans the ramp's full width (typical slider effects are
+  // sub-1K; the extreme threshold is ±5 K). t ∈ [−1, 1] maps linearly over
+  // the whole ramp — green at −1, yellow at 0, red at +1.
+  const t = Math.max(-1, Math.min(1, effectK / 1.5));
+  const idx = Math.round((1 + t) * (WHATIF_RAMP.length - 1) / 2);
+  return WHATIF_RAMP[Math.max(0, Math.min(WHATIF_RAMP.length - 1, idx))];
+}
 
 function status(message, kind = "info") {
   window.dispatchEvent(new CustomEvent("uhi:status", { detail: { message, kind } }));
@@ -99,7 +127,12 @@ async function loadTileLayer() {
 function wardStyle(feature) {
   const key = joinKeyOf(feature);
   let fillColor = "#888";
-  if (state.layer === "landcover") {
+  if (whatIf.active) {
+    // WHAT-IF MODE: color = predicted intervention effect, overriding layer.
+    const wn = feature.properties?.ward_no;
+    const eff = wn != null ? whatIfEffect(wn) : null;
+    fillColor = eff != null ? whatIfColor(eff) : "#888";
+  } else if (state.layer === "landcover") {
     // Categorical: fill = dominant WorldCover class color (no percentiles).
     const wn = feature.properties?.ward_no;
     const row = wn != null ? landcoverStats?.byWard.get(wn) : null;
@@ -121,6 +154,19 @@ function wardTooltip(feature) {
   const key = joinKeyOf(feature);
   const wn = feature.properties?.ward_no;
   const name = wn == null ? "Unnumbered area" : `Ward ${wn}`;
+
+  if (whatIf.active && wn != null) {
+    const eff = whatIfEffect(wn);
+    if (eff == null) return `${name}<br>no baseline data`;
+    const flagged = Math.abs(eff) > scenarioModel.thresholds.max_abs_dlst_c ? "<br><i>⚠ beyond observed range</i>" : "";
+    return (
+      `<b>${name} — what-if</b><br>` +
+      `Predicted effect: <b>${eff > 0 ? "+" : ""}${eff.toFixed(2)} K</b> vs no-action` +
+      `${flagged}<br><i>${scenarioModel.equation}</i><br>` +
+      `<i>scenario: ${whatIf.vegPct > 0 ? "+" : ""}${whatIf.vegPct}% vegetation, ` +
+      `${whatIf.builtPct > 0 ? "+" : ""}${whatIf.builtPct}% built-up</i>`
+    );
+  }
 
   if (state.layer === "landcover") {
     const row = wn != null ? landcoverStats?.byWard.get(wn) : null;
@@ -214,7 +260,18 @@ function updateLegend() {
   const Legend = L.Control.extend({
     onAdd() {
       const div = L.DomUtil.create("div", "uhi-legend");
-      if (state.layer === "landcover" && landcoverStats) {
+      if (whatIf.active) {
+        div.innerHTML =
+          `<b>What-if — predicted effect vs no-action</b>` +
+          `<div class="uhi-legend-row">` +
+          WHATIF_RAMP.map((c) => `<span class="uhi-legend-swatch" style="background:${c}"></span>`).join("") +
+          `</div>` +
+          `<div class="uhi-legend-labels"><span>−1.5 K (cooler)</span><span>+1.5 K (hotter)</span></div>` +
+          `<div class="uhi-legend-note">scenario: ${whatIf.vegPct > 0 ? "+" : ""}${whatIf.vegPct}% vegetation, ` +
+          `${whatIf.builtPct > 0 ? "+" : ""}${whatIf.builtPct}% built-up<br>` +
+          `${scenarioModel?.equation ?? ""}<br>` +
+          `<i>intercept excluded (effect vs today); fit r²=${scenarioModel?.r2?.toFixed(2) ?? "—"}, n=${scenarioModel?.n ?? "—"}</i></div>`;
+      } else if (state.layer === "landcover" && landcoverStats) {
         // Categorical legend: one swatch row per WorldCover class.
         div.innerHTML =
           `<b>${spec.label}</b>` +
@@ -238,7 +295,9 @@ function updateLegend() {
       return div;
     },
   });
-  legendControl = new Legend({ position: "bottomright" }).addTo(map);
+  // Top-right: the AI-chat FAB + drawer occupy the bottom-right corner and
+  // would cover the legend there (user report 2026-09-24).
+  legendControl = new Legend({ position: "topright" }).addTo(map);
 }
 
 let legendControl = null;
@@ -355,6 +414,29 @@ export function getState() {
   return { ...state, years: yearsForLayer(state.layer) };
 }
 
+// --- what-if map API (task #10, used by ui.js) ------------------------------
+export async function enableWhatIf(v) {
+  whatIf.active = Boolean(v);
+  if (whatIf.active && !scenarioModel) {
+    status("Loading scenario model…");
+    scenarioModel = await fetchScenarioModel();
+  }
+  status(whatIf.active
+    ? `What-if mode: map shows predicted per-ward effect (intercept excluded)`
+    : `What-if mode off — back to ${LAYER_SPECS[state.layer].label}`);
+  restyleWards();
+  updateLegend();
+}
+
+export function setWhatIfDeltas(vegPct, builtPct) {
+  whatIf.vegPct = Number(vegPct) || 0;
+  whatIf.builtPct = Number(builtPct) || 0;
+  if (whatIf.active) {
+    restyleWards();
+    updateLegend();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
@@ -412,6 +494,8 @@ export async function initMap() {
     setChoroplethVisible,
     setHotspotsVisible,
     getSelectedWard,
+    enableWhatIf,
+    setWhatIfDeltas,
   });
 
   status("Ready");

@@ -60,6 +60,17 @@ export async function fetchLandcoverStats() {
 }
 
 /**
+ * GET /api/scenario-model
+ * -> { coef, effect_semantics, thresholds, ward_baselines: {ndvi, ndbi},
+ *      equation, r2, n, ... } — inputs for the what-if map (task #10).
+ *      The client computes per-ward effect = b_ndvi*dNDVI + b_ndbi*dNDBI
+ *      (intercept excluded — semantics published by the backend).
+ */
+export async function fetchScenarioModel() {
+  return getJSON("/api/scenario-model");
+}
+
+/**
  * GET /api/hotspots?pct=..&min_year_frac=..
  * -> FeatureCollection of persistent hotspot wards (LST), geometry null —
  *    joined client-side to the already-loaded ward polygons by ward_no.
@@ -89,6 +100,25 @@ export async function postScenario(zoneId, vegDelta, builtupDelta) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail ?? detail; } catch { /* keep */ }
     throw new Error(`scenario → ${res.status}: ${detail}`);
+  }
+  return res.json();
+}
+
+/**
+ * POST /api/chat { message, history }
+ * -> { reply, sources: [tool names], provider } — the AI assistant
+ *    (task #11). 503 when no provider key is configured or all fail.
+ */
+export async function postChat(message, history = []) {
+  const res = await fetch(`${API_BASE}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep */ }
+    throw new Error(`chat → ${res.status}: ${detail}`);
   }
   return res.json();
 }

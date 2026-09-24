@@ -140,6 +140,61 @@ def get_fit(season: str = DEFAULT_SEASON, refresh: bool = False) -> dict:
         return fit
 
 
+def model_payload(season: str = DEFAULT_SEASON) -> dict:
+    """Everything the WHAT-IF MAP (task #10) needs, in one payload.
+
+    The client computes per-ward predicted dLST locally (no 114 server
+    round-trips while sliders move) — so the BACKEND must publish the exact
+    inputs, and this endpoint is their single source of truth.
+
+    SEMANTICS (decided 2026-09-24, supersedes the original PLAN sketch):
+    the map shows the INTERVENTION EFFECT — the difference vs no-action —
+      effect_ward = b_ndvi * (veg_pct/100 * ndvi_base)
+                  + b_ndbi * (built_pct/100 * ndbi_base)
+    The intercept is EXCLUDED: it captures the study period's average
+    year-pair drift (~−0.49 K), so including it would show "do nothing →
+    city cools 0.5°" at zero sliders. (predict() keeps the intercept:
+    there the question is anchored to the historical panel; on the map the
+    anchor is *today*.) Includes the extrapolation thresholds so the map
+    can flag extreme wards exactly like the endpoint does.
+    """
+    fit = get_fit(season)
+
+    def _baselines(series):
+        return {
+            (wn if isinstance(wn, int) else None):
+            (sum(ts.values()) / len(ts) if ts else None)
+            for wn, ts in series.items()
+        }
+
+    baselines = {
+        "ndvi": _baselines(_series_by_ward(season, "ndvi")),
+        "ndbi": _baselines(_series_by_ward(season, "ndbi")),
+    }
+    lo, hi = fit["d_lst_observed_range_k"]
+    return {
+        "season": season,
+        "coef": fit["coef"],
+        "effect_semantics": (
+            "map shows intervention effect vs no-action: "
+            "b_ndvi*dNDVI + b_ndbi*dNDBI (intercept excluded)"
+        ),
+        "r2": fit["r2"],
+        "n": fit["n"],
+        "signs_as_expected": fit["signs_as_expected"],
+        "d_lst_observed_range_k": [lo, hi],
+        "thresholds": {
+            "max_abs_dlst_c": MAX_ABS_DLST_C,
+            "extrapolation_frac": EXTRAPOLATION_FRAC,
+        },
+        "ward_baselines": baselines,
+        "equation": (
+            f"dLST = {fit['coef']['intercept']:+.3f} "
+            f"{fit['coef']['ndvi']:+.3f}*dNDVI {fit['coef']['ndbi']:+.3f}*dNDBI (K)"
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Prediction
 # ---------------------------------------------------------------------------

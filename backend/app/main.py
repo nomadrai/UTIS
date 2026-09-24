@@ -21,6 +21,7 @@ from backend.app.api.landcover_stats import router as landcover_stats_router
 from backend.app.api.wards import router as wards_router
 from backend.app.api.hotspots import router as hotspots_router
 from backend.app.api.scenario import router as scenario_router
+from backend.app.api.chat import router as chat_router
 from backend.app.api.gee_status import router as gee_status_router
 
 app = FastAPI(
@@ -35,6 +36,7 @@ app.include_router(landcover_stats_router)
 app.include_router(wards_router)
 app.include_router(hotspots_router)
 app.include_router(scenario_router)
+app.include_router(chat_router)
 app.include_router(gee_status_router)
 
 # The Leaflet frontend is served as plain static files (no build step), so it

@@ -563,6 +563,44 @@
 - ❌ Not yet attempted: GEE auth/first pull, any real GEE query, composites,
   hotspot/scenario math, live endpoints, map rendering.
 
+## 2026-09-24 (session 12) — Task #11: AI chat bot with provider fallback
+
+### Done
+- `backend/app/services/chat_providers.py` — OpenAI-compatible client over
+  urllib (zero new dependencies): ordered provider chain Groq → Google AI →
+  OpenRouter, keys/models re-read from env per call, failover on 429/401/403/408
+  + timeouts (NOT on 500s — that would just triple latency for the same bug).
+- `backend/app/services/chat_bot.py` — 4 tools (ward-year stats, hotspots,
+  landcover, run_scenario) calling the ANALYSIS layer directly with compacted
+  results (top/bottom-5 precomputed so the model never scans 114 rows); tool
+  loop capped at AI_MAX_TOOL_ROUNDS then forced no-tools answer; system prompt
+  carries the grounding contract + honesty caveats verbatim.
+- `POST /api/chat` — pydantic validation (message ≤ 2000 chars, history ≤ 12
+  turns, roles forced to user/assistant so a client can never inject a system
+  prompt), 503-with-reason when keys are absent or all providers fail.
+- Frontend chat drawer: FAB, suggestion chips, source chips ("via
+  get_hotspots, run_scenario · groq"), client history cap.
+- Smoke suite: 46 checks (chat validation ×3, live-or-disabled branch, drawer
+  in headless DOM).
+
+### Key decisions & why
+- **Tools call the analysis layer, not HTTP endpoints** — no self-request
+  complexity, one less failure mode; endpoint functions stay thin.
+- **Grounding enforced structurally, not just by prompt**: every number the
+  model can state comes from a tool result; what-ifs MUST route through
+  run_scenario; results compacted server-side so context stays small.
+- **Chat is optional**: no keys → clean 503 with setup instructions; the app
+  remains fully functional (the smoke suite passes both branches).
+
+### Working / Broken
+- Works: all 46 smoke checks. No provider keys set in this environment → the
+  disabled branch is what's verified live; the live branch needs GROQ_API_KEY
+  (or Google AI/OpenRouter) in backend/.env.
+
+---
+
+## 2026-09-23 (session 1) — Project scaffolding
+
 ### Next steps (for next session)
 - [ ] Task #1 — GEE auth end-to-end (noncommercial Cloud project,
       `earthengine authenticate`, `GEE_PROJECT_ID` in backend/.env), then
@@ -630,8 +668,8 @@
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 10 | What-if map: choropleth recolored by predicted per-ward dLST | todo | Reuses scenario baselines + fitted coefficients client-side; slider drives a live "greening/built-up scenario" heatmap |
-| 11 | AI chat about city temperature (ward + city-wide) | todo | OpenAI-compatible tool-calling bot; providers Groq → Google AI → OpenRouter fallback; tools = existing endpoints; system prompt = METHODOLOGY digest; bot must CALL /api/scenario, never compute numbers itself |
+| 10 | What-if map: choropleth recolored by predicted per-ward dLST | done | GET /api/scenario-model publishes coef+baselines once; client computes effect per ward and recolors live; intercept excluded (effect vs no-action) — see design note |
+| 11 | AI chat about city temperature (ward + city-wide) | done | POST /api/chat live: tool-calling bot, Groq → Google AI → OpenRouter fallback, 4 grounded tools, 503-with-reason when keys absent; UI chat drawer with source chips |
 | 12 | Trend charts (Chart.js) | todo | Ward/city LST line over years, NDVI+NDBI side panel; data from /api/comparison caches |
 | 13 | Exposure weighting (population) | todo | WorldPop/GHSL via GEE; per-ward population → hotspot ranking by people exposed; new cache + endpoint |
 | 14 | Delta layers dLST(2019→2025) | todo | Server-side GEE subtraction composite → tile layer; "where is warming concentrated" |
@@ -653,12 +691,18 @@
   fail over on 429/quota/timeout. Keys in backend/.env (see .env.example);
   free-tier model names are configurable. Privacy note: prompts go to
   third parties — acceptable for public satellite data, documented.
-- **What-if map (#10) design:** predicted dLST_ward = intercept + b_ndvi·
-  (pct_veg/100·NDVI_base) + b_ndbi·(pct_built/100·NDBI_base) per ward,
-  computed client-side from /api/scenario's model metadata + cached
-  baselines; recolors the choropleth with a diverging palette + legend.
-  Backend stays the single source of truth: the endpoint publishes the
-  coefficients + baselines the client uses.
+- **What-if map (#10) design:** predicted effect_ward = b_ndvi·
+  (pct_veg/100·NDVI_base) + b_ndbi·(pct_built/100·NDBI_base) per ward —
+  **intercept deliberately excluded** (discovered during #10: including it
+  would show "do nothing → city cools 0.5 K", because the intercept captures
+  the study period's average historical drift, not an intervention's
+  effect; the correct counterfactual is *difference vs no-action*). Payload
+  publishes `effect_semantics` so the choice is explicit. Computed
+  client-side from GET /api/scenario-model (coef + per-ward baselines +
+  extrapolation thresholds — one fetch, no 114-request storm); recolors the
+  choropleth with a diverging palette (green −1.5 K … red +1.5 K) + legend
+  with the equation. Backend stays the single source of truth: the endpoint
+  publishes the coefficients + baselines the client uses.
 - **Exposure weighting (#13):** population per ward from WorldPop/GHSL
   (GEE catalog, same AOI/season discipline); hotspot ranking gains a
   "people exposed" dimension; caveat: population rasters are model

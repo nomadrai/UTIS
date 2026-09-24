@@ -64,3 +64,21 @@ def estimate_scenario(req: ScenarioRequest, season: str = scenario.DEFAULT_SEASO
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:  # panel too small to fit
         raise HTTPException(503, str(exc)) from exc
+
+
+@router.get("/api/scenario-model")
+def get_scenario_model(season: str = scenario.DEFAULT_SEASON) -> dict:
+    """Publish the fitted model + per-ward baselines for the WHAT-IF MAP
+    (task #10).
+
+    NO response_model on purpose: the payload is one flexible dict (per-ward
+    baseline maps, thresholds) consumed by the map client; adding a strict
+    model here is what silently stripped fields from /api/scenario before
+    (see PLAN.md session 12). Errors: 404 missing caches, 503 un-fittable.
+    """
+    try:
+        return scenario.model_payload(season)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
